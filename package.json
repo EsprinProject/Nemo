@@ -1,0 +1,48 @@
+{
+  "name": "esprin_nemo",
+  "version": "3.1.1",
+  "main": "src/main/main.js",
+  "description": "Note, Nothing.",
+  "author": "TheOninesixY <oninesixy@qq.com>",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win"
+  },
+  "private": true,
+  "devDependencies": {
+    "electron": "^44.4.3",
+    "electron-builder": "^24.6.0"
+  },
+  "build": {
+    "appId": "io.github.theoninesixy.esprin_nemo",
+    "productName": "Esprin Nemo",
+    "icon": "assets/icon.ico",
+    "files": [
+      "src/",
+      "assets/"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "portable": {
+      "artifactName": "EsprinNemo.Portable.v${version}.${ext}"
+    },
+    "nsis": {
+      "artifactName": "EsprinNemo.Setup.v${version}.${ext}",
+      "include": "src/win_installer/installer.nsh",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "uninstallDisplayName": "Esprin Nemo"
+    },
+    "directories": {
+      "buildResources": "assets"
+    }
+  },
+  "dependencies": {
+    "material-symbols": "^0.47.4"
+  }
+}

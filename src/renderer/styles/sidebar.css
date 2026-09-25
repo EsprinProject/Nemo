@@ -1,0 +1,471 @@
+/* 左「侧边栏」导航与中「笔记列表」面板 */
+
+/* 1. Sidebar */
+.sidebar {
+    width: 210px;
+    background-color: var(--bg-sidebar);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow: hidden;
+    transition: width 0.18s ease;
+}
+
+.sidebar-action-wrap {
+    padding: 10px 8px 4px 8px;
+}
+/* 「新建」两份的外包装：经典布局里只是一层不影响排版的包装——副本（新建待办）不排出来，
+   本体照旧是整宽按钮 + 弹出菜单（现代布局里这层要撑住两份之间的间隔，见 styles/mode.css） */
+.sidebar-new-split {
+    display: block;
+}
+.sidebar-new-split .btn-sidebar-new-extra {
+    display: none;
+}
+/* 「新建文档」那一枚图标只属于现代布局的悬停态（见 styles/mode.css），
+   经典布局里按钮上始终只有原来的加号，这一枚不排出来 */
+.btn-new-note-icon-doc {
+    display: none;
+}
+.btn-sidebar-new {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    background-color: var(--accent);
+    color: var(--accent-fg);
+    font-size: 13px;
+    font-weight: 500;
+    transition: opacity 0.15s, transform 0.1s;
+    cursor: pointer;
+}
+/* 展开时只显示文字，收起时加号渐显出来。
+   加号用绝对定位：不参与展开态的排版（不会把「新建」文字顶偏，也不需要 gap 留给它），
+   并且固定贴在按钮左内侧——与下方导航图标同一列，淡入过程中不会位移。
+   不用 display: none 是因为那样无法过渡，收起时会硬生生跳出来。 */
+.btn-new-note-icon {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0;
+    transition: opacity 0.18s ease;
+}
+.btn-sidebar-new:hover {
+    opacity: 0.92;
+}
+.btn-sidebar-new:active {
+    transform: scale(0.98);
+}
+
+.nav-section {
+    padding: 10px 8px 4px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+/* 标签区占满剩余高度，便于标签过多时内部滚动 */
+.nav-section-tags {
+    flex: 1;
+    min-height: 0;
+}
+
+.nav-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+    font-size: 12.5px;
+}
+.nav-item:hover {
+    background-color: var(--item-hover);
+    color: var(--text-primary);
+}
+.nav-item.active {
+    background-color: var(--item-active);
+    color: var(--text-primary);
+    font-weight: 500;
+}
+.nav-item-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+.nav-item-left span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.nav-badge {
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: var(--radius-pill);
+    background-color: var(--item-hover);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+
+.folder-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+.tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 8px;
+    overflow-y: auto;
+    max-height: 150px;
+}
+.tag-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: var(--radius-pill);
+    background-color: var(--item-hover);
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+}
+.tag-pill:hover {
+    background-color: var(--item-active);
+    color: var(--text-primary);
+}
+.tag-pill.active {
+    background-color: var(--accent-bg);
+    color: var(--accent);
+    font-weight: 500;
+}
+
+.sidebar-bottom {
+    margin-top: auto;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border-light);
+    display: flex;
+    align-items: center;
+    /* 图标组整体靠右，与左端的概览文字分开（真正的推手是 #sidebar-stat 的 margin-right: auto） */
+    justify-content: flex-end;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+/* 清空废纸篓：与底栏的设置、收起按钮同尺寸的图标按钮，悬停高亮大小一致（保留危险操作的红色）。
+   opacity 参与过渡：收起动画期间它随底栏一起渐隐（见下方 .icons-fading） */
+.btn-clear-trash {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    border-radius: var(--radius-sm);
+    color: var(--danger);
+    transition: background-color 0.15s, color 0.15s, width 0.18s ease, height 0.18s ease, opacity 0.14s ease;
+}
+.btn-clear-trash:hover {
+    background-color: var(--item-hover);
+    color: var(--danger);
+}
+/* 底栏右侧的小图标按钮：清空废纸篓 / 导入文件 / 设置 / 收起展开，成组靠右（收起按钮在最右侧）。
+   width / height 参与过渡：收起时它们会从 20×20 放到 24×24，与背景收窄同步变化；
+   opacity 参与过渡：收起动画期间它们随底栏一起渐隐（见下方 .icons-fading） */
+.btn-sidebar-bottom {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    transition: background-color 0.15s, color 0.15s, width 0.18s ease, height 0.18s ease, opacity 0.14s ease;
+}
+.btn-sidebar-bottom:hover {
+    background-color: var(--item-hover);
+    color: var(--text-primary);
+}
+/* 底栏概览文字独占左端：margin-right: auto 吸收全部剩余空间，右侧图标组整体贴到右缘，
+   清空废纸篓与导入文件因此紧挨设置按钮左侧（两者按 DOM 顺序本就排在设置之前）。
+   自动外边距挂在概览文字而非某个图标上：概览文字常驻，图标会随视图隐藏，自动外边距不会随之失效。
+   过长时省略文字，不换行也不把按钮挤出侧边栏 */
+#sidebar-stat {
+    min-width: 0;
+    margin-right: auto;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* Sidebar Collapsed State: 只保留一条窄条与图标入口。
+   状态类挂在 <html> 上：boot.js 会在首屏渲染前根据 config.sidebarCollapsed 写一次，
+   因此启动时已是收起态，既不会先展开再收起，也不会补播收起动效。
+   收起动效由 scripts/render.js 分两拍驱动（文字先渐隐，之后才写这个类），
+   所以这里只描述「静下来之后长什么样」，并保证整个过程里图标是原地不动的。 */
+html.sidebar-collapsed .sidebar {
+    width: 48px;
+}
+/* 收起后隐藏所有文字、计数、文件夹与标签过滤分区（清空废纸篓保留为图标按钮） */
+html.sidebar-collapsed .sidebar .nav-text,
+html.sidebar-collapsed .sidebar .nav-badge,
+html.sidebar-collapsed .sidebar .nav-section-folders,
+html.sidebar-collapsed .sidebar .nav-section-tags {
+    display: none;
+}
+/* 导航图标收起前后停在同一个 x 上：这里的左右内边距与展开态一致（分区 8px + 条目 8px），
+   条目变窄时图标也不会被居中排布推着走，所以收起过程中途不需要居中 */
+html.sidebar-collapsed .sidebar .nav-item {
+    padding: 7px 8px;
+}
+html.sidebar-collapsed .sidebar .nav-item-left {
+    gap: 0;
+}
+
+/* 「新建」按钮跟着背景一起往里收：宽度仍是 100%，随侧边栏宽度连续变窄；
+   加号（绝对定位在按钮左侧）则同时淡入，与收窄同一拍，位置始终不动 */
+html.sidebar-collapsed .sidebar .btn-new-note-icon {
+    opacity: 1;
+}
+
+/* 底栏：收起后改为竖排图标组，不再显示上方分界线（上方已无内容）。
+   这里用右对齐而不是居中，是为了让这组按钮在收窄过程中贴着右边缘一起往里收；
+   窄条 48px 减去原内边距 12px 后放 24px 按钮本身就是居中的，终态与居中排布等价 */
+html.sidebar-collapsed .sidebar .sidebar-bottom {
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 4px;
+    border-top: none;
+}
+/* 清空废纸篓 / 导入文件 / 设置 / 展开按钮一起放大到 24×24，纵向顺序与横排一致（靠 DOM 顺序） */
+html.sidebar-collapsed .sidebar .btn-clear-trash {
+    width: 24px;
+    height: 24px;
+}
+html.sidebar-collapsed .sidebar .btn-sidebar-bottom {
+    width: 24px;
+    height: 24px;
+}
+
+/* 文字淡出 / 淡入共用一个临时类（.text-fading 由 scripts/render.js 控制时机）：
+   收起时它负责第一拍的文字渐隐（此阶段布局不动，图标因此不位移）；
+   展开时它让文字在宽度过渡结束前保持不可见，先完成组件展开，再淡入文字。 */
+.nav-text,
+.nav-badge,
+.nav-section-folders,
+.nav-section-tags,
+/* 现代布局的应用名同样属于侧边栏文字，展开时与它们一起淡入（见 styles/mode.css） */
+.sidebar-brand {
+    transition: opacity 0.16s ease;
+}
+
+.sidebar.text-fading .nav-text,
+.sidebar.text-fading .nav-badge,
+.sidebar.text-fading .nav-section-folders,
+.sidebar.text-fading .nav-section-tags,
+.sidebar.text-fading .sidebar-brand {
+    opacity: 0;
+}
+
+/* 底栏图标的临时类（.icons-fading 由 scripts/render.js 只在收起方向上挂）：
+   收起时底栏要从横排换成竖排、按钮还要从 20 放大到 24，若一路可见就会看到一次跳变。
+   因此让它们跟文字同一拍先渐隐（比文字略快，保证换排布时已经彻底看不见），
+   等宽度过渡结束、临时类被摘掉后再渐显回新位置。
+   展开方向不挂这个类，底栏因此保持一直可见。 */
+.sidebar.icons-fading .btn-clear-trash,
+.sidebar.icons-fading .btn-sidebar-bottom {
+    opacity: 0;
+}
+
+/* 2. Notes List Panel */
+.notes-panel {
+    width: 270px;
+    background-color: var(--bg-list);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.notes-panel-header {
+    padding: 10px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background-color: var(--item-hover);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 0 8px;
+    height: 28px;
+}
+.search-box input {
+    flex: 1;
+    padding: 0 6px;
+    font-size: 12px;
+    color: var(--text-primary);
+    user-select: text;
+}
+.search-box input::placeholder {
+    color: var(--text-muted);
+}
+.search-box .btn-clear {
+    cursor: pointer;
+    color: var(--text-muted);
+}
+.search-box .btn-clear:hover {
+    color: var(--text-primary);
+}
+
+.notes-panel-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 0 2px;
+}
+.notes-panel-info select,
+.notes-panel-info .dropdown-trigger {
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.notes-panel-info select option {
+    background: var(--bg-list);
+    color: var(--text-primary);
+}
+
+.notes-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.note-card {
+    padding: 10px 12px;
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.note-card:hover {
+    background-color: var(--item-hover);
+    border-color: var(--border-light);
+}
+.note-card.active {
+    background-color: var(--item-active);
+    border-color: var(--border-color);
+}
+
+.note-card-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.note-card-preview {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.4;
+}
+.note-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 10.5px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+.note-card-folder {
+    padding: 1px 4px;
+    border-radius: var(--radius-xs);
+    background: var(--item-hover);
+}
+
+/* 待办卡片：左侧勾选框 + 右侧标题/摘要/时间（卡片本体沿用笔记卡片的视觉，整体保持轻量） */
+.todo-card {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 8px;
+}
+.todo-check {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin-top: 1px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    transition: color 0.15s, background-color 0.15s;
+}
+/* 悬浮只轻轻提亮图标，不铺一层更深的底色 */
+.todo-check:hover {
+    background-color: var(--item-hover);
+    color: var(--accent);
+}
+/* 完成状态靠图标形状与删除线区分，不用高对比的实心色块 */
+.todo-card.done .todo-check {
+    color: var(--text-muted);
+}
+/* 选中卡片底色变深，勾选框相应提亮一点，避免图标糊在背景里 */
+.todo-card.active .todo-check {
+    color: var(--text-secondary);
+}
+.todo-card-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.todo-card.done .note-card-title span {
+    text-decoration: line-through;
+    color: var(--text-muted);
+}
+.todo-card.done .note-card-preview {
+    color: var(--text-muted);
+    opacity: 0.85;
+}

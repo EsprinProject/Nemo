@@ -1,0 +1,733 @@
+/* 设置视图：左侧分类侧边栏 + 右侧内容区，以及开关控件 */
+
+.settings-view {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+    background-color: var(--bg-editor);
+    /* 内容区上方的留白：经典布局里是内容区自己的上内边距，现代布局换成了顶上那条拖动空白
+       （见 styles/mode.css），两处同一个值 */
+    --settings-top-inset: 32px;
+}
+/* 拖动空白：只在现代布局下排出来（经典布局上面有标题栏可拖），样式见 styles/mode.css */
+.settings-drag-band {
+    display: none;
+}
+.settings-sidebar {
+    width: 210px;
+    flex-shrink: 0;
+    background-color: var(--bg-sidebar);
+    border-right: 1px solid var(--border-color);
+    padding: 10px 8px;
+    overflow-y: auto;
+}
+.settings-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+/* 复用 .nav-item 的视觉语言，并覆盖按钮默认的居中排布 */
+.settings-nav-item {
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+    font-size: 12.5px;
+}
+.settings-content {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    overflow-y: auto;
+    padding: 32px 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+/* ---------------- 设置页不显示滚动条 ----------------
+   两列都照旧可滚（滚轮、触控板、键盘），只是不再画出那条 6px 的细条（见 base.css）：
+   设置页是整屏铺开的静态页面，常驻的滚动条像一道多出来的边框。 */
+.settings-sidebar,
+.settings-content {
+    scrollbar-width: none;
+}
+.settings-sidebar::-webkit-scrollbar,
+.settings-content::-webkit-scrollbar {
+    display: none;
+}
+
+/* 每个分类一个面板，同一时刻只显示当前分类 */
+.settings-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+.settings-header {
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 16px;
+}
+.settings-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.settings-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+.settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+/* 分区标题：这是「一组设置的名字」，不跟行标题（14px 正文色）抢层级——
+   字号更小、颜色更淡，前面一小段强调色竖条标出分组的起点 */
+.settings-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+.settings-section-title::before {
+    content: "";
+    flex-shrink: 0;
+    width: 3px;
+    height: 13px;
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    opacity: 0.8;
+}
+.settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    background: var(--bg-list);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    max-width: 680px;
+    /* 悬停时边框轻轻收一下：一行设置本身点不动，但能看出鼠标正落在哪一行 */
+    transition: border-color 0.15s;
+}
+.settings-row:hover {
+    border-color: var(--text-muted);
+}
+.settings-row-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+}
+.settings-row-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+/* 行内当前值（例如界面尺寸的 125%）：跟在行标题后面，随设置即时变化 */
+.settings-value {
+    margin-left: 8px;
+    padding: 1px 6px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-body);
+    color: var(--text-secondary);
+    font-size: 11.5px;
+    font-weight: 500;
+    /* 数字等宽：拖动滑块时徽标宽度不跟着跳 */
+    font-variant-numeric: tabular-nums;
+}
+.settings-row-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.settings-subsection-title {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    margin-top: 2px;
+}
+
+/* 行标题旁边的小胶囊入口（如「缩放比例」右侧的「自定义」）：
+   它只负责把从属的那一行展开，因此紧跟行标题、不独占右侧控件位 */
+.settings-inline-toggle {
+    margin-left: 8px;
+    padding: 1px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-pill);
+    background: var(--bg-body);
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.6;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background-color 0.15s;
+}
+.settings-inline-toggle:hover {
+    border-color: var(--text-muted);
+    color: var(--text-primary);
+}
+/* 展开中：跟着主题色走，一眼能看出这一行的从属设置正开着 */
+.settings-inline-toggle.active {
+    border-color: var(--accent);
+    background: var(--accent-bg);
+    color: var(--accent);
+}
+
+/* 从属行（「缩放比例」下的自定义比例）：左侧让出缩进并挂一条竖线，
+   说明它是父项展开后才出现的一行，而不是并列的另一项设置 */
+.settings-row-sub {
+    margin-left: 20px;
+    max-width: 660px;
+    border-left: 2px solid var(--accent-bg);
+}
+
+/* 主题色（强调色）：预设色板、自定义取色与效果预览 */
+.accent-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    max-width: 680px;
+}
+.accent-swatch {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid var(--border-color);
+    background-color: var(--swatch-color, var(--bg-body));
+    transition: transform 0.12s, box-shadow 0.12s;
+}
+/* “跟随主题”色块：用明暗两套默认蓝的对角渐变表示未自定义 */
+.accent-swatch-default {
+    background-image: linear-gradient(135deg, #0969da 0 50%, #58a6ff 50% 100%);
+}
+.accent-swatch:hover {
+    transform: scale(1.08);
+}
+/* 选中环：外层与设置面板底色同色，避免圆环直接贴到色块边缘 */
+.accent-swatch.selected {
+    box-shadow: 0 0 0 2px var(--bg-editor), 0 0 0 4px var(--accent);
+}
+.accent-custom {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    max-width: 680px;
+    padding: 14px 16px;
+    background: var(--bg-list);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+.accent-color-input {
+    width: 44px;
+    height: 30px;
+    padding: 0;
+    background: var(--bg-body);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+.accent-color-input::-webkit-color-swatch-wrapper { padding: 2px; }
+.accent-color-input::-webkit-color-swatch {
+    border: none;
+    border-radius: var(--radius-xs);
+}
+.accent-hex-input {
+    width: 110px;
+    height: 30px;
+    padding: 0 10px;
+    background: var(--bg-body);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    user-select: text;
+    transition: border-color .15s;
+}
+.accent-hex-input:hover { border-color: var(--text-muted); }
+.accent-hex-input:focus { border-color: var(--accent); }
+.accent-custom-hint {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.accent-preview {
+    max-width: 680px;
+    padding: 14px 16px;
+    background: var(--bg-list);
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius-md);
+}
+.accent-preview-label {
+    display: block;
+    font-size: 11px;
+    letter-spacing: 0.4px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+}
+.accent-preview-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.accent-preview-btn {
+    height: 28px;
+    padding: 0 14px;
+    border-radius: var(--radius-sm);
+    background: var(--accent);
+    color: var(--accent-fg);
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: default;
+}
+.accent-preview-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--accent-bg);
+    color: var(--accent);
+    font-size: 12.5px;
+}
+.accent-preview-link {
+    color: var(--accent);
+    font-size: 12.5px;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+}
+
+/* 数据存放位置 */
+.settings-path {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    background: var(--item-hover);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    padding: 5px 8px;
+    word-break: break-all;
+    user-select: text;
+    cursor: text;
+}
+.settings-path-tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: var(--radius-xs);
+    font-family: var(--font-sans);
+    font-size: 10.5px;
+    color: var(--text-muted);
+    background: var(--item-active);
+}
+.settings-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex-shrink: 0;
+    /* 与左侧底部的路径框保持在同一行，避免出现“按钮一行、路径一行”的错位观感 */
+    align-self: flex-end;
+}
+.settings-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 30px;
+    padding: 0 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-body);
+    color: var(--text-secondary);
+    font-size: 12px;
+    white-space: nowrap;
+    transition: border-color 0.15s, color 0.15s, background-color 0.15s, opacity 0.15s;
+}
+.settings-btn:hover:not(:disabled) {
+    border-color: var(--text-muted);
+    color: var(--text-primary);
+}
+.settings-btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+}
+.settings-btn.primary:hover:not(:disabled) {
+    /* 悬浮时保持强调色底面上的文字色，避免被通用 hover 规则改成正文色（浅色主题下近似黑色） */
+    border-color: var(--accent);
+    color: var(--accent-fg);
+    opacity: 0.9;
+}
+.settings-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+/* 开发运行（bun start）下数据存放位置固定：整个选项置灰、不可更改 */
+.settings-row.is-locked {
+    opacity: 0.7;
+}
+.settings-select {
+    flex-shrink: 0;
+    min-width: 190px;
+    max-width: 260px;
+    padding: 6px 10px;
+    background: var(--bg-body);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color .15s;
+}
+.settings-select:hover { border-color: var(--text-muted); }
+.settings-select:focus { border-color: var(--accent); }
+.settings-select option,
+.settings-select optgroup {
+    background: var(--bg-list);
+    color: var(--text-primary);
+}
+
+/* 自绘滑块（圆角尺度 / 界面尺寸共用）：轨道左侧已选部分用主题色填充，档位文字可点选。
+   进度条与滑块都是自绘元素（原生 range 透明叠在上面只负责交互），
+   因此落档时滑块会滑到新位置、进度条同步长过去；拖动时取消补间保持跟手，
+   档位文字在此期间保持不变，松手吸附到最近档位后才更新高亮。 */
+.settings-slider {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 220px;
+    /* --slider-pos：滑块位置比例 0~1；--slider-fill：已选进度比例，
+       均由 scripts/appearance.js 的 setSliderPosition 写入 */
+    --slider-pos: 0;
+    --slider-fill: 0%;
+}
+.slider-track {
+    position: relative;
+    height: 18px;
+}
+/* 轨道底线：居中 4px 圆头 */
+.slider-track::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 4px;
+    transform: translateY(-50%);
+    border-radius: var(--radius-pill);
+    background: var(--border-color);
+}
+.slider-fill {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    height: 4px;
+    width: var(--slider-fill);
+    transform: translateY(-50%);
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    transition: width .22s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.slider-thumb {
+    position: absolute;
+    top: 50%;
+    /* 位置用比例算：两端正好留出滑块半径，与原生 range 的行程一致 */
+    left: calc(var(--slider-pos) * (100% - 14px));
+    width: 14px;
+    height: 14px;
+    margin-top: -7px;
+    /* 直角档位下滑块也跟着变方（见 styles/radius.css） */
+    border-radius: var(--radius-knob);
+    background: var(--accent);
+    border: 1px solid var(--bg-list);
+    box-shadow: 0 0 0 1px var(--border-color);
+    /* 拖动交给叠在上面的原生 range */
+    pointer-events: none;
+    transition: left .22s cubic-bezier(0.22, 0.61, 0.36, 1), transform .12s;
+}
+.slider-track:hover .slider-thumb {
+    transform: scale(1.12);
+}
+/* 正在拖动：取消补间，滑块跟手而不滞后 */
+.settings-slider.is-dragging .slider-thumb,
+.settings-slider.is-dragging .slider-fill {
+    transition: none;
+}
+/* 原生 range：整体透明叠在轨道上，只提供拖动 / 点击 / 键盘操作 */
+.slider-range {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+}
+.slider-range::-webkit-slider-runnable-track {
+    height: 100%;
+    background: transparent;
+}
+.slider-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+.slider-ticks {
+    display: flex;
+    justify-content: space-between;
+}
+.slider-tick {
+    /* 竖排：档位名在上、数值在下（圆角尺度只有档位名，排出来与单行一样） */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: color .15s;
+}
+.slider-tick:hover { color: var(--text-primary); }
+.slider-tick.active {
+    color: var(--accent);
+    font-weight: 600;
+}
+/* 档位下面的数值（界面尺寸用）：字号更小、颜色更淡，选中时跟着变成主题色 */
+.slider-tick-value {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-muted);
+    opacity: 0.85;
+    font-variant-numeric: tabular-nums;
+}
+.slider-tick.active .slider-tick-value {
+    color: var(--accent);
+    opacity: 1;
+}
+
+/* 界面尺寸的「自定义比例」：数字输入框 + 「%」+ 应用按钮 */
+.settings-scale-custom {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.settings-number-input {
+    width: 84px;
+    padding: 6px 10px;
+    background: var(--bg-body);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    text-align: center;
+    /* 数字等宽：输入 88 与 111 时字距不跟着跳 */
+    font-variant-numeric: tabular-nums;
+    user-select: text;
+    transition: border-color .15s;
+}
+.settings-number-input::placeholder {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+.settings-number-input:hover { border-color: var(--text-muted); }
+.settings-number-input:focus { border-color: var(--accent); }
+.settings-number-suffix {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+.font-preview {
+    font-family: var(--font-doc);
+    padding: 14px 16px;
+    background: var(--bg-list);
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    max-width: 680px;
+    line-height: 1.7;
+    font-size: 13.5px;
+}
+.font-preview-label {
+    display: block;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    letter-spacing: 0.4px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+/* Toggle Switch */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+}
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--border-color);
+    transition: .2s;
+    border-radius: var(--radius-pill);
+}
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .2s;
+    border-radius: var(--radius-knob);
+}
+input:checked + .slider {
+    background-color: var(--accent);
+}
+input:checked + .slider:before {
+    transform: translateX(20px);
+}
+/* 开关不可用时（例如开发运行下的开机自启）：降低不透明度并去掉手型光标 */
+.switch input:disabled + .slider {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* 更新分类：下载进度与更新说明 */
+.update-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 680px;
+    padding: 14px 16px;
+    background: var(--bg-list);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+.update-progress-track {
+    height: 6px;
+    border-radius: var(--radius-pill);
+    background: var(--item-active);
+    overflow: hidden;
+}
+.update-progress-bar {
+    height: 100%;
+    width: 0;
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    transition: width 0.2s linear;
+}
+.update-progress-text {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.update-notes {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 680px;
+    padding: 14px 16px;
+    background: var(--bg-list);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+.update-notes-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.update-notes-version {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+}
+.update-notes-date {
+    font-size: 11.5px;
+    color: var(--text-muted);
+}
+/* 版本说明按 Markdown 渲染（排版交给 editor.css 的 .markdown-body），超长内容在框内滚动 */
+.update-notes-body {
+    max-height: 260px;
+    overflow-y: auto;
+    font-size: 12px;
+    color: var(--text-secondary);
+    word-break: break-word;
+    user-select: text;
+    cursor: text;
+}
+/* 正文比笔记正文更小，标题层级跟着收一号；首尾元素去掉外边距，避免框内留白过多 */
+.update-notes-body h1,
+.update-notes-body h2 {
+    font-size: 13.5px;
+}
+.update-notes-body h3,
+.update-notes-body h4,
+.update-notes-body h5,
+.update-notes-body h6 {
+    font-size: 12.5px;
+}
+.update-notes-body > *:first-child {
+    margin-top: 0;
+}
+.update-notes-body > *:last-child {
+    margin-bottom: 0;
+}
+/* 版本号做成指向该版本发布页的链接：外观与纯文本一致，悬停才给出下划线 */
+.update-notes-version a {
+    color: inherit;
+    text-decoration: none;
+}
+.update-notes-version a:hover {
+    text-decoration: underline;
+}
+/* 更新状态行：沿用 AI 面板的状态着色约定（ok / error） */
+#update-status[data-tone='ok'] {
+    color: var(--accent);
+}
+#update-status[data-tone='error'] {
+    color: var(--danger);
+}

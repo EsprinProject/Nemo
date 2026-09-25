@@ -1,0 +1,60 @@
+name: Pages
+
+# 官网（.github/pages）发布到 GitHub Pages：
+# 推送到 main 分支且页面文件有变化时自动部署，也可以在 Actions 里手动触发。
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/pages/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy Site
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Pages
+        uses: actions/configure-pages@v5
+
+      - name: 组装站点
+        run: |
+          mkdir -p _site
+          cp -r .github/pages/. _site/
+
+          mkdir -p _site/readme _site/assets _site/src/renderer/fonts/Mohave
+          cp readme/*.png _site/readme/
+          cp assets/icon.png _site/assets/
+          cp src/renderer/fonts/Mohave/Mohave-VariableFont_wght.ttf _site/src/renderer/fonts/Mohave/
+
+          sed -i 's#\.\./\.\./#\./#g' _site/index.html _site/styles.css
+
+          echo "产物文件："
+          find _site -type f | sort
+
+      - name: 上传站点文件
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: 部署
+        id: deployment
+        uses: actions/deploy-pages@v4

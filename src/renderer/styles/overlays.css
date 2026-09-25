@@ -1,0 +1,87 @@
+/* 浮层：条目右键菜单、「新建」菜单与 Toast 提示 */
+
+/* Context Menu */
+.context-menu {
+    position: fixed;
+    background: var(--bg-list);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 4px;
+    min-width: 140px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    z-index: 300;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    /* 与自绘下拉菜单同一拍入场（关键帧定义见 dropdown.css，两者共用） */
+    animation: dropdownIn 0.12s ease-out;
+}
+.context-menu-item {
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background-color 0.12s, color 0.12s;
+}
+.context-menu-item:hover {
+    background: var(--item-active);
+}
+.context-menu-item.danger {
+    color: var(--danger);
+}
+.context-menu-item.danger:hover {
+    background: var(--danger-bg);
+}
+
+/* Toast notifications */
+.toast-box {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 400;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+}
+.toast-item {
+    background: var(--bg-titlebar);
+    border: 1px solid var(--border-color);
+    padding: 8px 14px;
+    border-radius: var(--radius-md);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    animation: slideUp 0.15s ease-out;
+}
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+/* 退场：淡出并继续往「来时的反方向」上浮一小段，与入场的 slideUp 首尾呼应，
+   不再像原来那样只是原地变透明。.is-leaving 由 scripts/ui.js 在停留结束时挂上，
+   动画跑完（200ms）再把节点摘掉 */
+.toast-item.is-leaving {
+    animation: fadeOutUp 0.2s var(--ease-standard) forwards;
+}
+@keyframes fadeOutUp {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(-6px); }
+}
+/* 减少动态效果：入场 / 退场动画由 base.css 统一关掉，这里把退场换成纯透明度过渡——
+   不然提示会在停留结束时「原地消失」，比原来的行内淡出还生硬。
+   过渡声明挂在 .toast-item 上（不是 .is-leaving），否则它会与 opacity: 0 同一次计算生效，不会补间 */
+@media (prefers-reduced-motion: reduce) {
+    .toast-item {
+        transition: opacity 0.2s linear;
+    }
+    .toast-item.is-leaving {
+        opacity: 0;
+    }
+}

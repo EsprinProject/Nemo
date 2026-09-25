@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Esprin Nemo</title>
+    <!-- 外观引导：三个窗口共用同一套外观换算逻辑（boot.js 读取配置后调用它） -->
+    <script src="./window_appearance.js"></script>
+    <script src="./boot.js"></script>
+    <link rel="stylesheet" href="../../node_modules/material-symbols/rounded.css">
+    <link rel="stylesheet" href="./styles/tokens.css">
+    <link rel="stylesheet" href="./styles/base.css">
+    <link rel="stylesheet" href="./styles/sidebar.css">
+    <link rel="stylesheet" href="./styles/editor.css">
+    <link rel="stylesheet" href="./styles/overlays.css">
+    <!-- 自绘下拉菜单：替代 Chromium 原生 select 的弹出列表 -->
+    <link rel="stylesheet" href="./styles/dropdown.css">
+    <link rel="stylesheet" href="./styles/settings.css">
+    <link rel="stylesheet" href="./styles/ai.css">
+    <!-- 自建同步：设置页「数据与存储」里的服务器与同步面板 -->
+    <link rel="stylesheet" href="./styles/sync.css">
+    <!-- 随口记：语音转文本（编辑器顶栏入口与聆听反馈条） -->
+    <link rel="stylesheet" href="./styles/voice.css">
+    <!-- 秘密本：加密条目的锁面板与设置页「秘密本」列表 -->
+    <link rel="stylesheet" href="./styles/secret.css">
+    <!-- Alom 风格：仅当 <html data-theme-style="alom"> 时生效 -->
+    <link rel="stylesheet" href="./styles/alom.css">
+    <!-- 圆角尺度：按设置中的选择把 --radius-* 令牌换算成最终圆角，需排在其它风格之后 -->
+    <link rel="stylesheet" href="./styles/radius.css">
+    <!-- 界面布局：现代布局（<html class="modern-layout">）下去掉标题栏，标签页移到工作区顶部，入口悬浮到右上角 -->
+    <link rel="stylesheet" href="./styles/mode.css">
+    <!-- 动效层：进场动画与换肤交叉淡入。需排在所有组件样式之后：它只补动效，
+         静默状态的外观仍由上面的各文件决定（令牌见 tokens.css 的 --motion-* / --ease-*） -->
+    <link rel="stylesheet" href="./styles/motion.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 1. Top Titlebar: Clean & Tab-oriented -->
+        <header class="titlebar" id="app-titlebar">
+            <!-- App Name Brand（点击可关闭全部标签页回到首页） -->
+            <div class="titlebar-brand" id="app-brand" title="回到首页">EsprinNemo</div>
+
+            <!-- Tabs container stretching to the new note button；现代布局的标签页在工作区顶部
+                 （#workspace-tabs），这一个只在经典布局下渲染，见 scripts/render.js 的 renderTabs -->
+            <div class="titlebar-tabs" id="titlebar-tabs"></div>
+
+            <!-- Action buttons in titlebar -->
+            <div class="titlebar-actions">
+                <!-- AI 助手：右侧问答面板（需先在设置中配置站点与模型） -->
+                <button class="btn-action-icon" id="btn-ai-assistant" title="AI 助手">
+                    <span class="ms-icon sm">chat_bubble</span>
+                </button>
+                <!-- 小本本：屏幕右下角的便利贴小窗口（始终置顶） -->
+                <button class="btn-action-icon" id="btn-scratchpad" title="小本本">
+                    <span class="ms-icon sm">sticky_note_2</span>
+                </button>
+                <button class="btn-action-icon" id="btn-theme-toggle" title="切换主题">
+                    <span class="ms-icon sm" id="theme-icon">computer</span>
+                </button>
+                <button class="btn-action-icon" id="btn-fullscreen" title="全屏">
+                    <span class="ms-icon sm">fullscreen</span>
+                </button>
+            </div>
+
+            <!-- Window controls for frameless electron window -->
+            <div class="window-controls">
+                <button class="win-btn" id="win-min" title="最小化">
+                    <span class="ms-icon xs">remove</span>
+                </button>
+                <button class="win-btn" id="win-max" title="最大化">
+                    <span class="ms-icon xs">crop_square</span>
+                </button>
+                <button class="win-btn close" id="win-close" title="关闭">
+                    <span class="ms-icon xs">close</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- 2. Main Content Body -->
+        <div class="app-body">
+            <!-- Left Sidebar Navigation -->
+            <aside class="sidebar" id="app-sidebar">
+                <!-- Top New Button in Sidebar：经典布局下点击后在按钮下方展开「新建笔记 / 新建待办 / 导入文件」菜单。
+                     现代布局下应用名（.sidebar-brand）与这个按钮并排一行：名字在左、按钮靠最右，
+                     按钮收成正方形、不再弹菜单——平时仍是原来那副样子（主题色底 + 加号），
+                     悬停时底色褪成中性浅灰、加号换成「新建文档」的图标，同时从旁边「复制」出第二份
+                     （展开态向左滑出、收起态向下滑出）：一份新建笔记、一份新建待办
+                     （见 styles/mode.css 的「新建的两份」与 scripts/events.js）。 -->
+                <div class="sidebar-action-wrap">
+                    <!-- 应用名：仅现代布局显示（标题栏在该布局下被移除），纯展示、不可点击，
+                         与「新建」按钮同一行；侧边栏收起时连同按钮一起收成加号 -->
+                    <div class="sidebar-brand" id="sidebar-brand">EsprinNemo</div>
+                    <!-- 两份「新建」的外包装：现代布局里由它撑住两份之间的间隔，
+                         鼠标从本体移到副本上时不会半路掉出悬停区（见 styles/mode.css） -->
+                    <div class="sidebar-new-split" id="sidebar-new-split">
+                        <!-- 副本（新建待办）：平时在排版里不占位，悬停时才滑出来。
+                             现代布局下排在本体左边（展开态）或下边（收起态），位置由 order 决定；
+                             经典布局里这一枚不排出来（样式见 styles/sidebar.css）。
+                             图标沿用侧边栏里「待办」那一枚，一眼能认出它管的是待办 -->
+                        <button class="btn-sidebar-new btn-sidebar-new-extra" id="btn-new-todo"
+                                title="新建待办 (Ctrl+Shift+N)">
+                            <span class="ms-icon sm">check_box</span>
+                        </button>
+                        <!-- 本体（新建笔记）：停在原处不动——鼠标停在哪个按钮上，点下去的就还是哪一个。
+                             两枚图标叠在正中：加号是平时的样子，悬停时淡出、换成「新建文档」那一枚
+                             （后者只在现代布局排出来，见 styles/sidebar.css 与 styles/mode.css） -->
+                        <button class="btn-sidebar-new" id="btn-new-note" title="新建笔记 (Ctrl+N)">
+                            <span class="ms-icon sm btn-new-note-icon">add</span>
+                            <span class="ms-icon sm btn-new-note-icon-doc">note_add</span>
+                            <span class="nav-text">新建</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Main Filters：笔记 / 待办各自一个入口，已置顶与废纸篓两类混排 -->
+                <div class="nav-section nav-section-main">
+                    <div class="nav-item active" data-filter="all" title="全部笔记">
+                        <div class="nav-item-left">
+                            <span class="ms-icon sm">description</span>
+                            <span class="nav-text">笔记</span>
+                        </div>
+                        <span class="nav-badge" id="count-all">0</span>
+                    </div>
+                    <div class="nav-item" data-filter="todos" title="全部待办">
+                        <div class="nav-item-left">
+                            <span class="ms-icon sm">check_box</span>
+                            <span class="nav-text">待办</span>
+                        </div>
+                        <span class="nav-badge" id="count-todos">0</span>
+                    </div>
+                    <div class="nav-item" data-filter="pinned" title="已置顶的笔记与待办">
+                        <div class="nav-item-left">
+                            <span class="ms-icon sm">push_pin</span>
+                            <span class="nav-text">已置顶</span>
+                        </div>
+                        <span class="nav-badge" id="count-pinned">0</span>
+                    </div>
+                    <div class="nav-item" data-filter="trash" title="废纸篓（笔记与待办共用）">
+                        <div class="nav-item-left">
+                            <span class="ms-icon sm">delete</span>
+                            <span class="nav-text">废纸篓</span>
+                        </div>
+                        <span class="nav-badge" id="count-trash">0</span>
+                    </div>
+                </div>
+
+                <!-- Folders -->
+                <div class="nav-section nav-section-folders">
+                    <div class="nav-section-title">
+                        <span>文件夹</span>
+                        <button id="btn-add-folder" title="新建文件夹">
+                            <span class="ms-icon xs">add</span>
+                        </button>
+                    </div>
+                    <div class="folder-list" id="sidebar-folder-list"></div>
+                </div>
+
+                <!-- Tags -->
+                <div class="nav-section nav-section-tags">
+                    <div class="nav-section-title">
+                        <span>标签过滤</span>
+                    </div>
+                    <div class="tag-list" id="sidebar-tag-list"></div>
+                </div>
+
+                <!-- Footer Status & Trash Management
+                     概览文字在左，图标组贴右缘：清空废纸篓 / 导入文件排在设置左侧（靠 DOM 顺序），
+                     推手是概览文字的 margin-right: auto（见 styles/sidebar.css）；
+                     收起态下本区域改为纵向排布，图标自上而下同序 -->
+                <div class="sidebar-bottom">
+                    <span id="sidebar-stat" class="nav-text">共 0 篇笔记</span>
+                    <button class="btn-clear-trash hidden" id="btn-empty-trash" title="彻底清空废纸篓">
+                        <span class="ms-icon xs">delete_forever</span>
+                    </button>
+                    <!-- 导入文件：原先挂在「新建」菜单里，现代布局下菜单没了，这里独立成一枚按钮，
+                         固定排在设置按钮左边（清空废纸篓之后、设置之前）。
+                         进废纸篓视图时藏起来——那里不该再往里导东西（见 scripts/render.js 的 renderCounts） -->
+                    <button class="btn-sidebar-bottom" id="btn-import-note" title="导入文件为笔记">
+                        <span class="ms-icon xs">file_upload</span>
+                    </button>
+                    <!-- 设置入口（两种状态下均可见） -->
+                    <button class="btn-sidebar-bottom" id="btn-open-settings" title="设置">
+                        <span class="ms-icon xs">settings</span>
+                    </button>
+                    <!-- 收起/展开侧边栏 -->
+                    <button class="btn-sidebar-bottom" id="btn-toggle-sidebar" title="收起侧边栏">
+                        <span class="ms-icon xs" id="sidebar-toggle-icon">keyboard_double_arrow_left</span>
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Middle Notes List -->
+            <section class="notes-panel">
+                <div class="notes-panel-header">
+                    <div class="search-box">
+                        <span class="ms-icon sm" style="color: var(--text-muted);">search</span>
+                        <input type="text" id="input-search" placeholder="搜索笔记... (Ctrl+K)" spellcheck="false">
+                        <span class="ms-icon xs btn-clear hidden" id="btn-search-clear">close</span>
+                    </div>
+                    <div class="notes-panel-info">
+                        <span id="panel-category-title">全部内容</span>
+                        <select id="select-sort">
+                            <option value="updated-desc">修改时间 ↓</option>
+                            <option value="created-desc">创建时间 ↓</option>
+                            <option value="title-asc">标题 A-Z</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="notes-list" id="notes-list-box"></div>
+            </section>
+
+            <!-- Right Workspace / Editor -->
+            <main class="workspace" id="workspace-box">
+                <!-- 现代布局的标签页：经典布局里标签页归标题栏所有，这里不显示（见 styles/mode.css）。
+                     工作区这一列从窗口上沿开始，因此这一条标签页正好落在笔记列表搜索栏那一行；
+                     两个容器同时存在，scripts/render.js 只往当前布局的那一个里渲染，
+                     没有打开任何标签时整条收起（:empty） -->
+                <div class="workspace-tabs" id="workspace-tabs"></div>
+
+                <!-- 现代布局的「返回」只有这一枚，挂在标签页最左侧（只留图标，见 styles/mode.css）：
+                     它自己一层盖在标签页左端让出来的一格上，编辑器打开时滑入、关掉时滑出，
+                     与侧边栏收起与否无关（标签栏被「禁用标签页」收起时它落在编辑器顶栏同一格上） -->
+                <button class="tabs-back" id="btn-tabs-back" title="返回笔记列表">
+                    <!-- 两枚图标随标签页走，同时只显示一枚（见 styles/mode.css 的「返回」那一段）：
+                         标签页开着时这枚就钉在标签栏最左端，标签栏已在手边，点它是一步「回到首页」，
+                         于是用首页图标；「禁用标签页」时它落在编辑器顶栏那一格上，仍用原来的返回箭头 -->
+                    <span class="ms-icon sm tabs-back-icon-back">arrow_back</span>
+                    <span class="ms-icon sm tabs-back-icon-home">home</span>
+                </button>
+
+                <!-- Empty Placeholder Screen -->
+                <div class="empty-placeholder" id="empty-state">
+                    <!-- 现代布局的窗口拖动区：一块不可见的空白，铺在下面的图标 / 文字 / 按钮之下，
+                         并整列避开右上角的悬浮按钮（只有该布局显示，见 styles/mode.css） -->
+                    <div class="empty-drag-surface" aria-hidden="true"></div>
+                    <span class="ms-icon">edit_note</span>
+                    <p>选择一篇笔记或一项待办，或新建</p>
+                    <button class="btn-new-note" id="btn-empty-new">新建</button>
+                </div>
+
+                <!-- Workspace Topbar。编辑器整块（顶栏 / 工具栏 / 标题 / 正文 / 状态栏）首屏先按住不排：
+                     启动时一个标签也没开，这些东西本就该是收起的，等脚本渲染出当前条目再放开
+                     （见 scripts/render.js 的 renderWorkspace）。不先按住的话，首屏在脚本起来之前
+                     它们是排着的：工作区此刻只看得见空状态，而浮在空状态之上的标签栏「返回」
+                     （z-index 12，无标签时那一行自己收起）会先冒出一枚「返回首页」。 -->
+                <div class="editor-topbar hidden" id="editor-topbar">
+                    <!-- 顶栏里不再有「返回」：退回笔记列表统一走标签栏最左端那一枚
+                         （#btn-tabs-back，见上），侧边栏收起时也不换地方（见 styles/mode.css） -->
+                    <div class="editor-meta">
+                        <select class="select-folder" id="editor-folder-select"></select>
+                        <div class="note-tags-container" id="editor-tags-container"></div>
+                        <button class="btn-action-icon" id="btn-add-tag" title="添加标签">
+                            <span class="ms-icon sm">label</span>
+                        </button>
+                    </div>
+
+                    <!-- 视图切换与待办完成开关：现代布局下这一行本身就是拖动窗口的留白，
+                         按钮与分段控件单独抠回 no-drag（见 styles/mode.css）。
+                         置顶 / 导出 / 移入废纸篓（废纸篓里的恢复 / 彻底删除）都在条目右键菜单里，
+                         顶栏不再各留一个按钮（见 scripts/context_menu.js） -->
+                    <div class="editor-actions">
+                        <!-- 随口记：语音转文本（识别结果插到光标处）。默认只用本机离线识别，
+                             组件状态与联网兜底开关在「设置 → 编辑器 → 随口记」，
+                             显隐与起停见 scripts/voice_notes.js -->
+                        <button class="btn-action-icon" id="btn-voice-dictate"
+                                title="随口记：语音转文本 (Ctrl+Shift+M)" aria-pressed="false">
+                            <span class="ms-icon sm">mic</span>
+                        </button>
+
+                        <div class="editor-view-modes">
+                            <button class="view-btn active" id="btn-mode-edit">编辑</button>
+                            <button class="view-btn" id="btn-mode-split">分屏</button>
+                            <button class="view-btn" id="btn-mode-preview">预览</button>
+                        </div>
+
+                        <!-- 待办：标记完成 / 取消完成（仅待办条目可见） -->
+                        <button class="btn-action-icon hidden" id="btn-todo-done" title="标记为已完成">
+                            <span class="ms-icon sm">radio_button_unchecked</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 随口记的聆听反馈条：只在聆听过程中出现（识别结果直接进正文，这里只显示状态、
+                     实时片段与语言）。安静态整条不排，编辑器顶栏以下不留空档 -->
+                <div class="voice-bar hidden" id="voice-bar">
+                    <span class="voice-pulse" aria-hidden="true"><i></i><i></i><i></i></span>
+                    <span class="voice-state" id="voice-state"></span>
+                    <span class="voice-interim" id="voice-interim"></span>
+                    <div class="voice-spacer"></div>
+                    <select class="voice-lang" id="voice-lang-select" title="识别语言">
+                        <option value="zh-CN">普通话</option>
+                        <option value="en-US">英语</option>
+                        <option value="ja-JP">日语</option>
+                    </select>
+                    <button class="voice-stop" id="btn-voice-stop" title="停止聆听 (Esc)">
+                        <span class="ms-icon xs">stop_circle</span>
+                        <span>停止</span>
+                    </button>
+                </div>
+
+                <!-- Formatting Toolbar -->
+                <div class="editor-toolbar hidden" id="editor-toolbar">
+                    <button class="fmt-btn" data-fmt="bold" title="加粗">B</button>
+                    <button class="fmt-btn" data-fmt="italic" style="font-style: italic;" title="斜体">I</button>
+                    <div class="fmt-divider"></div>
+                    <button class="fmt-btn" data-fmt="h1">H1</button>
+                    <button class="fmt-btn" data-fmt="h2">H2</button>
+                    <button class="fmt-btn" data-fmt="h3">H3</button>
+                    <div class="fmt-divider"></div>
+                    <button class="fmt-btn" data-fmt="ul" title="无序列表"><span class="ms-icon sm">format_list_bulleted</span></button>
+                    <button class="fmt-btn" data-fmt="ol" title="有序列表"><span class="ms-icon sm">format_list_numbered</span></button>
+                    <button class="fmt-btn" data-fmt="task" title="待办清单"><span class="ms-icon sm">check_box</span></button>
+                    <button class="fmt-btn" data-fmt="quote" title="引用"><span class="ms-icon sm">format_quote</span></button>
+                    <button class="fmt-btn" data-fmt="code" title="代码块"><span class="ms-icon sm">code</span></button>
+                    <button class="fmt-btn" data-fmt="hr" title="分割线"><span class="ms-icon sm">horizontal_rule</span></button>
+                </div>
+
+                <!-- Note Title Input -->
+                <div class="editor-title-area hidden">
+                    <input type="text" class="editor-title-input" id="input-note-title" placeholder="无标题笔记...">
+                </div>
+
+                <!-- 编辑器与预览 -->
+                <div class="editor-content-area hidden">
+                    <div class="editor-pane" id="editor-pane">
+                        <textarea class="editor-textarea" id="textarea-note-content" placeholder="输入 Markdown 内容..." spellcheck="false"></textarea>
+                    </div>
+                    <div class="preview-pane hidden" id="preview-pane">
+                        <div class="markdown-body" id="preview-content"></div>
+                    </div>
+
+                    <!-- 加密条目的锁面板：盖在编辑区上，解锁前不展示正文（见 scripts/editor.js 的 applySecretLockUI） -->
+                    <div class="secret-lock-overlay hidden" id="secret-lock-overlay">
+                        <span class="ms-icon secret-lock-icon">lock</span>
+                        <div class="secret-lock-title" id="secret-lock-title">该文档的正文已加密</div>
+                        <div class="secret-lock-desc">正文以 AES-256-GCM 加密保存，输入密码后可在本次运行中查看与编辑。</div>
+                        <button class="settings-btn primary" id="btn-secret-unlock">输入密码</button>
+                    </div>
+                </div>
+
+                <!-- Footer Status -->
+                <footer class="editor-footer hidden">
+                    <div class="editor-footer-left">
+                        <span id="save-status">就绪</span>
+                        <span id="stat-last-edit">修改于 刚刚</span>
+                    </div>
+                    <div class="editor-footer-right">
+                        <span id="stat-char-count">字符: 0</span>
+                        <span id="stat-word-count">字数: 0</span>
+                    </div>
+                </footer>
+            </main>
+
+            <!-- 4. AI 助手：贴在工作区右侧的问答面板（标题栏按钮开关） -->
+            <aside class="ai-panel hidden" id="ai-panel">
+                <!-- 现代布局的窗口拖动区：踮在面板顶栏上方的空白（只有该布局显示，见 styles/mode.css），
+                     高度与悬浮按钮组一致，同时也把面板顶栏让到按钮下方 -->
+                <div class="ai-panel-drag-strip" aria-hidden="true"></div>
+                <div class="ai-panel-header">
+                    <span class="ms-icon sm">chat_bubble</span>
+                    <span class="ai-panel-title">AI 助手</span>
+                    <span class="ai-panel-model" id="ai-panel-model">未配置模型</span>
+                    <div class="ai-panel-spacer"></div>
+                    <button class="btn-action-icon" id="btn-ai-new-chat" title="新建对话">
+                        <span class="ms-icon sm">add</span>
+                    </button>
+                    <button class="btn-action-icon" id="btn-ai-history" title="对话记录">
+                        <span class="ms-icon sm">history</span>
+                    </button>
+                    <button class="btn-action-icon" id="btn-ai-clear" title="清空当前对话">
+                        <span class="ms-icon sm">delete_sweep</span>
+                    </button>
+                    <button class="btn-action-icon" id="btn-ai-close" title="关闭">
+                        <span class="ms-icon sm">close</span>
+                    </button>
+                </div>
+
+                <!-- 对话记录：盖在消息区上方的第二层视图（切换 / 新建 / 重命名 / 删除） -->
+                <div class="ai-drawer hidden" id="ai-drawer">
+                    <div class="ai-drawer-header">
+                        <span class="ms-icon sm">history</span>
+                        <span class="ai-drawer-title">对话记录</span>
+                        <div class="ai-panel-spacer"></div>
+                        <button class="ai-drawer-new" id="btn-ai-drawer-new">
+                            <span class="ms-icon xs">add</span>
+                            <span>新建对话</span>
+                        </button>
+                        <button class="btn-action-icon" id="btn-ai-drawer-close" title="收起列表">
+                            <span class="ms-icon sm">close</span>
+                        </button>
+                    </div>
+                    <div class="ai-chat-list" id="ai-chat-list"></div>
+                    <div class="ai-drawer-footer">一份对话一个文件，保存在数据目录的 ai_chats 中</div>
+                </div>
+
+                <!-- 当前对话的消息区（对话保存在数据目录的 ai_chats/{id}.json） -->
+                <div class="ai-messages" id="ai-messages">
+                    <div class="ai-empty" id="ai-empty">
+                        <span class="ms-icon">forum</span>
+                        <p>问点什么吧，AI 会结合你的笔记回答</p>
+                        <div class="ai-example">
+                            <button class="ai-example-chip" data-prompt="帮我总结一下当前笔记的要点">总结当前笔记</button>
+                            <button class="ai-example-chip" data-prompt="根据我的笔记，列出其中还没有完成的待办项">找出笔记中的待办</button>
+                            <button class="ai-example-chip" data-prompt="我的笔记里主要在关注哪些主题？请归类整理">笔记主题归类</button>
+                        </div>
+                        <p class="ai-empty-hint">回答可以复制、插入当前笔记，或直接存为新笔记；图片与文本文件可拖进来一起发。</p>
+                    </div>
+                </div>
+
+                <div class="ai-composer">
+                    <!-- 已选好、待发送的附件（图片缩略图 / 文件卡片） -->
+                    <div class="ai-attach-strip hidden" id="ai-attachment-strip"></div>
+                    <!-- 输入框与它内部的那条底栏共用一层「字段」容器：底栏排在正文下方（不是叠上去），
+                         这样输入框内部滚动时正文不会钻到按钮底下。
+                         底栏左端是附带范围下拉；右端依次是 Agent 模式开关、附件与发送按钮
+                         （样式见 styles/ai.css 的 .ai-input-wrap） -->
+                    <div class="ai-input-wrap">
+                        <textarea class="ai-input" id="ai-input" spellcheck="false" placeholder="问点关于笔记的问题…（可拖入或粘贴图片 / 文本文件）"></textarea>
+                        <div class="ai-composer-bar">
+                            <!-- 附带范围：第一项的文字由 scripts/ai.js 的 updateAiScopeOptions 按当前打开的笔记
+                                 写成「附带当前笔记：<笔记名>」；没有打开笔记时这一项会被摘掉 -->
+                            <select class="ai-scope-select" id="ai-scope-select" title="本次提问附带的笔记范围">
+                                <option value="current">附带当前笔记</option>
+                                <option value="all">附带全部笔记</option>
+                                <option value="none">不附带笔记</option>
+                            </select>
+                            <div class="ai-composer-actions">
+                                <!-- Agent 模式：与标题栏的 AI 助手按钮同一套图标开关（点一下开、再点一下关），
+                                     开启时挂 .active 点亮成主题色；它排在附件按钮左边，与附件 / 发送同组 -->
+                                <button class="btn-action-icon" id="ai-agent-toggle" title="Agent 模式：开启后 AI 可以新建与修改笔记（正文、标题、文件夹、标签、置顶与废纸篓），每一步都能撤销" aria-pressed="false">
+                                    <!-- 机器人图标：Agent 模式的标识（原属 AI 助手，现随 Agent 模式走） -->
+                                    <span class="ms-icon sm">smart_toy</span>
+                                </button>
+                                <!-- 附件：排在发送按钮左边；只留一枚图标、不带按钮底色 -->
+                                <button class="btn-action-icon" id="btn-ai-attach" title="添加图片或文本文件（也可直接拖入、粘贴）">
+                                    <span class="ms-icon sm">attach_file</span>
+                                </button>
+                                <!-- 两枚都只留图标、不带按钮底色：发送用主题色（--accent 跟随品牌色设置），
+                                     停止用中性色，处在同一个位置时一眼能分出是哪一个 -->
+                                <button class="ai-send-btn hidden" id="btn-ai-stop" title="停止生成" aria-label="停止生成">
+                                    <span class="ms-icon">stop_circle</span>
+                                </button>
+                                <button class="ai-send-btn" id="btn-ai-send" title="发送（Enter）" aria-label="发送">
+                                    <span class="ms-icon">send</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- 5. Settings View：分类侧边栏 + 分类内容面板 -->
+            <div class="settings-view hidden" id="settings-view">
+                <!-- 设置分类导航（条目由 SETTINGS_CATEGORIES 在 initSettingsNav 中生成） -->
+                <aside class="settings-sidebar">
+                    <!-- 现代布局下的设置页是整屏铺开的（侧边栏与笔记列表都让位，工作区连同它的标签页也不占位），
+                         靠这个按钮回到笔记列表（经典布局下不显示） -->
+                    <button class="settings-back" id="btn-settings-back" title="返回笔记列表">
+                        <span class="ms-icon xs">arrow_back</span>
+                        <span>返回</span>
+                    </button>
+                    <nav class="settings-nav" id="settings-nav" aria-label="设置分类"></nav>
+                </aside>
+
+                <!-- 内容区上方的拖动空白：现代布局下设置页不收标题栏，而内容又会一路顶到窗口
+                     上沿——能拖窗口的那一条留白因此必须不参与滚动，样式见 styles/mode.css -->
+                <div class="settings-drag-band" aria-hidden="true"></div>
+
+                <!-- 设置内容区：面板与侧边栏条目通过 data-settings-panel 一一对应。
+                     顶端的标题与描述跟着当前分类走（见 scripts/settings.js） -->
+                <div class="settings-content">
+                    <div class="settings-header">
+                        <div class="settings-title">
+                            <span class="ms-icon md">settings</span>
+                            <span id="settings-header-text">设置</span>
+                        </div>
+                        <div class="settings-desc" id="settings-header-desc">管理 EsprinNemo 的偏好设置与编辑器行为</div>
+                    </div>
+
+                    <!-- 分类：编辑器与文本 -->
+                    <div class="settings-panel hidden" data-settings-panel="editor">
+                        <div class="settings-section">
+                            <div class="settings-section-title">编辑器与文本</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">错词红波浪线检查</span>
+                                    <span class="settings-row-desc">在笔记标题与正文中为拼写错误绘制红色波浪下划线</span>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="setting-spellcheck">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">废纸篓自动清理</span>
+                                    <span class="settings-row-desc">按最后一次编辑时间计算，超过保留期限的废纸篓笔记与待办将被永久删除，此操作无法撤销</span>
+                                </div>
+                                <select class="settings-select" id="setting-trash-retention">
+                                    <option value="0">不自动清理</option>
+                                    <option value="10">保留 10 天</option>
+                                    <option value="30">保留 30 天</option>
+                                    <option value="60">保留 60 天</option>
+                                    <option value="365">保留 365 天</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- 分区二：随口记（语音转文本）。识别由 Windows 自带的桌面识别引擎完成，
+                             音频只进本机引擎、不出本机，也没有联网档位 -->
+                        <div class="settings-section">
+                            <div class="settings-section-title">随口记（语音转文本）</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">启用随口记</span>
+                                    <span class="settings-row-desc">在编辑器顶栏显示麦克风按钮（Ctrl+Shift+M）：识别结果按句插入光标处。关闭后入口与快捷键一并失效</span>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="setting-voice-enabled">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">识别语言</span>
+                                    <span class="settings-row-desc">识别所用语言；系统需为该语言安装「语音识别」功能，否则随口记会拒绝启动并列出可用语言</span>
+                                </div>
+                                <select class="settings-select" id="setting-voice-lang">
+                                    <option value="zh-CN">普通话</option>
+                                    <option value="en-US">英语</option>
+                                    <option value="ja-JP">日语</option>
+                                </select>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">系统识别引擎</span>
+                                    <span class="settings-row-desc" id="voice-status">正在检测…</span>
+                                </div>
+                                <div class="settings-actions">
+                                    <button class="settings-btn" id="btn-voice-check">重新检测</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 分类：外观（界面 / 主题 / 主题色 / 字体四个分区） -->
+                    <div class="settings-panel hidden" data-settings-panel="appearance">
+                        <!-- 分区一：界面 —— 布局、缩放与圆角改的都是「这张界面长什么样」。
+                             布局只切 <html> 上的类名，其余排布全由 styles/mode.css 承担 -->
+                        <div class="settings-section">
+                            <div class="settings-section-title">界面</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">布局风格</span>
+                                    <span class="settings-row-desc">现代布局去掉标题栏、标签页移到工作区顶部；经典布局保留标题栏</span>
+                                </div>
+                                <select class="settings-select" id="setting-ui-mode">
+                                    <option value="modern">现代布局</option>
+                                    <option value="classic">经典布局</option>
+                                </select>
+                            </div>
+                            <!-- 「禁用标签页」只属于现代布局：整行随布局显隐（.settings-row-modern-only，
+                                 见 styles/mode.css），经典布局里不排出来，
+                                 免得给出一个按下去没反应的开关 -->
+                            <div class="settings-row settings-row-modern-only">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">禁用标签页</span>
+                                    <span class="settings-row-desc">收起工作区顶部的整条标签栏；已打开的标签仍然保留，关闭本开关即恢复显示（默认开启）</span>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="setting-tabs-disabled">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+
+                            <!-- 缩放比例：直接改 Chromium 缩放（应用见 scripts/appearance.js）。
+                                 滑块与圆角尺度共用一套自绘交互（.settings-slider）：整体跟手拖动，
+                                 松手后吸附到最近的档位，也可直接点档位文字；
+                                 五档之外的尺寸走下面折叠着的「自定义比例」 -->
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">缩放比例<span class="settings-value" id="ui-scale-value">100%</span>
+                                        <button type="button" class="settings-inline-toggle" id="btn-ui-scale-custom-toggle"
+                                                aria-expanded="false" aria-controls="ui-scale-custom-row" title="输入五档之外的比例">自定义</button>
+                                    </span>
+                                    <span class="settings-row-desc">按比例缩放主窗口界面（直接调整 Chromium 缩放），修改后立即生效；窗口最小尺寸按同一比例换算，弹窗与小本本按各自的固定尺寸排版，不随此项缩放</span>
+                                </div>
+                                <div class="settings-slider" id="ui-scale-slider">
+                                    <div class="slider-track">
+                                        <div class="slider-fill" aria-hidden="true"></div>
+                                        <div class="slider-thumb" aria-hidden="true"></div>
+                                        <input type="range" class="slider-range" id="setting-ui-scale" min="0" max="4" step="1"
+                                               value="2" aria-label="缩放比例" aria-describedby="ui-scale-ticks">
+                                    </div>
+                                    <div class="slider-ticks" id="ui-scale-ticks">
+                                        <button type="button" class="slider-tick" data-value="0">小<span class="slider-tick-value">80%</span></button>
+                                        <button type="button" class="slider-tick" data-value="1">中<span class="slider-tick-value">90%</span></button>
+                                        <button type="button" class="slider-tick" data-value="2">默认<span class="slider-tick-value">100%</span></button>
+                                        <button type="button" class="slider-tick" data-value="3">大<span class="slider-tick-value">110%</span></button>
+                                        <button type="button" class="slider-tick" data-value="4">超大<span class="slider-tick-value">120%</span></button>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 自定义比例：五档之外的尺寸收成一行，点上面那枚「自定义」才展开
+                                 （见 styles/settings.css 的 .settings-row-sub）；
+                                 生效与回退规则见 scripts/appearance.js 的 commitCustomUiScale -->
+                            <div class="settings-row settings-row-sub hidden" id="ui-scale-custom-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">自定义比例</span>
+                                    <span class="settings-row-desc">填写 50 ~ 200 的整数百分比，回车或点「应用」生效；生效后弹窗确认是否保留，未确认则恢复为默认的 100%</span>
+                                </div>
+                                <div class="settings-scale-custom">
+                                    <input type="text" class="settings-number-input" id="ui-scale-custom" inputmode="numeric"
+                                           maxlength="3" placeholder="50 ~ 200" spellcheck="false" aria-label="自定义缩放比例（百分比）">
+                                    <span class="settings-number-suffix">%</span>
+                                    <button class="settings-btn primary" id="btn-ui-scale-custom">应用</button>
+                                </div>
+                            </div>
+
+                            <!-- 圆角尺度：与缩放共用同一套自绘滑块（四档，档位文字即档位名） -->
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">圆角尺度</span>
+                                    <span class="settings-row-desc">卡片、按钮、输入框、标签与开关的圆角大小</span>
+                                </div>
+                                <div class="settings-slider" id="radius-slider">
+                                    <div class="slider-track">
+                                        <div class="slider-fill" aria-hidden="true"></div>
+                                        <div class="slider-thumb" aria-hidden="true"></div>
+                                        <input type="range" class="slider-range" id="setting-radius" min="0" max="3" step="1"
+                                               value="2" aria-label="圆角尺度" aria-describedby="radius-ticks">
+                                    </div>
+                                    <div class="slider-ticks" id="radius-ticks">
+                                        <button type="button" class="slider-tick" data-value="square">纯方</button>
+                                        <button type="button" class="slider-tick" data-value="slight">微圆角</button>
+                                        <button type="button" class="slider-tick" data-value="default">默认</button>
+                                        <button type="button" class="slider-tick" data-value="large">大圆</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 分区二：主题 —— 明暗、风格与应用名颜色同属一套配色体系，收在一处；
+                             明暗模式的标题栏按钮与这里的下拉互相同步（见 scripts/appearance.js） -->
+                        <div class="settings-section">
+                            <div class="settings-section-title">主题</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">明暗模式</span>
+                                    <span class="settings-row-desc">浅色 / 深色，或跟随系统设置自动切换；标题栏的主题按钮与这里同步</span>
+                                </div>
+                                <select class="settings-select" id="setting-theme-mode">
+                                    <option value="system">跟随系统</option>
+                                    <option value="light">浅色</option>
+                                    <option value="dark">深色</option>
+                                </select>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">界面风格</span>
+                                    <span class="settings-row-desc">选择界面风格</span>
+                                </div>
+                                <select class="settings-select" id="setting-theme-style">
+                                    <option value="default">默认风格</option>
+                                    <option value="alom">Alom</option>
+                                </select>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">左上角应用名</span>
+                                    <span class="settings-row-desc">标题栏左上角「EsprinNemo」的文字颜色；弹窗标题栏同步生效</span>
+                                </div>
+                                <select class="settings-select" id="setting-brand-color">
+                                    <option value="brand">品牌色</option>
+                                    <option value="mono">黑 / 白（跟随明暗）</option>
+                                    <option value="accent">跟随主题色</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- 分区三：主题色 —— 预设、自定义与预览放在一处，改完立刻看得到效果 -->
+                        <div class="settings-section">
+                            <div class="settings-section-title">主题色</div>
+
+                            <div class="settings-subsection-title">预设配色</div>
+                            <div class="accent-swatches" id="accent-swatches"></div>
+
+                            <div class="settings-subsection-title">自定义颜色</div>
+                            <div class="accent-custom">
+                                <input type="color" class="accent-color-input" id="accent-color-input" value="#58a6ff" title="打开系统取色器">
+                                <input type="text" class="accent-hex-input" id="accent-hex-input" spellcheck="false" maxlength="7" placeholder="#58A6FF" aria-label="十六进制颜色值">
+                                <button class="settings-btn primary" id="btn-accent-apply">应用</button>
+                                <span class="accent-custom-hint">支持 #RRGGBB 或 #RGB；留空则跟随主题</span>
+                            </div>
+
+                            <div class="accent-preview">
+                                <span class="accent-preview-label">预览</span>
+                                <div class="accent-preview-row">
+                                    <button class="accent-preview-btn" type="button" tabindex="-1">新建笔记</button>
+                                    <span class="accent-preview-chip"><span class="ms-icon xs">description</span>已选中</span>
+                                    <span class="accent-preview-link">链接文字</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 分区四：字体 —— 界面与文档各选西文 / CJK，两两共用同一份系统字体列表 -->
+                        <div class="settings-section">
+                            <div class="settings-section-title">字体</div>
+                            <div class="settings-row-desc" id="font-list-status">正在读取本机字体列表…</div>
+
+                            <div class="settings-subsection-title">界面字体</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">西文字体</span>
+                                    <span class="settings-row-desc">界面中拉丁字母与数字使用的字体</span>
+                                </div>
+                                <select class="settings-select" id="setting-font-ui-latin"></select>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">CJK 字体</span>
+                                    <span class="settings-row-desc">界面中汉字、日文、韩文使用的字体</span>
+                                </div>
+                                <select class="settings-select" id="setting-font-ui-cjk"></select>
+                            </div>
+
+                            <div class="settings-subsection-title">文档字体</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">西文字体</span>
+                                    <span class="settings-row-desc">笔记正文与预览中拉丁字母与数字使用的字体</span>
+                                </div>
+                                <select class="settings-select" id="setting-font-doc-latin"></select>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">CJK 字体</span>
+                                    <span class="settings-row-desc">笔记正文与预览中汉字、日文、韩文使用的字体</span>
+                                </div>
+                                <select class="settings-select" id="setting-font-doc-cjk"></select>
+                            </div>
+
+                            <div class="font-preview">
+                                <span class="font-preview-label">文档字体预览</span>
+                                <span id="font-preview-text">汉字与西文混排预览 Aa Bb Cc 0123 — The quick brown fox jumps over the lazy dog.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 分类：AI 助手 -->
+                    <div class="settings-panel hidden" data-settings-panel="ai">
+                        <div class="settings-section">
+                            <div class="settings-section-title">总开关</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">启用 AI 助手</span>
+                                    <span class="settings-row-desc">关闭后隐藏标题栏入口与对话面板，并中止正在生成的回答；下方配置原样保留，重新开启即恢复</span>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="setting-ai-enabled">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="settings-row-desc ai-status hidden" id="ai-disabled-hint">AI 助手已关闭：界面中不再显示任何 AI 入口。</div>
+                        </div>
+
+                        <div class="settings-section ai-config-section">
+                            <div class="settings-section-title">接口配置</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">API 站点</span>
+                                    <span class="settings-row-desc">兼容 OpenAI 协议的服务地址，可填到版本号一级（如 https://api.openai.com/v1），也可直接填写完整的 /chat/completions 地址</span>
+                                </div>
+                                <div class="ai-input-stack">
+                                    <input type="text" class="settings-input mono" id="setting-ai-baseurl" spellcheck="false" placeholder="https://api.example.com/v1">
+                                    <div class="ai-quick-fill">
+                                        <span class="ai-quick-fill-label">快捷填入</span>
+                                        <button class="ai-quick-chip" data-url="https://api.deepseek.com" title="https://api.deepseek.com">DeepSeek</button>
+                                        <button class="ai-quick-chip" data-url="http://localhost:11434" title="http://localhost:11434（Ollama 本地服务，API Key 可留空）">Ollama</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">API Key</span>
+                                    <span class="settings-row-desc">由系统密钥链加密保存（Windows 为 DPAPI、macOS 为钥匙串、Linux 为 libsecret），不写入数据目录，也不随 config.json 复制或分享；输入后回车即保存，本地服务（如 Ollama）可留空</span>
+                                </div>
+                                <div class="ai-input-stack">
+                                    <div class="ai-input-group">
+                                        <input type="password" class="settings-input mono" id="setting-ai-apikey" spellcheck="false" placeholder="sk-…" autocomplete="off">
+                                        <button class="settings-btn icon-only" id="btn-ai-key-toggle" title="显示 / 隐藏输入的 API Key">
+                                            <span class="ms-icon xs">visibility</span>
+                                        </button>
+                                        <button class="settings-btn hidden" id="btn-ai-key-clear" title="清除已保存的 API Key">清除</button>
+                                    </div>
+                                    <span class="ai-key-hint" id="ai-key-hint">尚未保存 API Key</span>
+                                </div>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">模型</span>
+                                    <span class="settings-row-desc">填写模型名称，也可从站点拉取可用模型列表</span>
+                                </div>
+                                <div class="ai-input-group">
+                                    <input type="text" class="settings-input mono" id="setting-ai-model" spellcheck="false" placeholder="gpt-4o-mini" list="ai-model-list">
+                                    <datalist id="ai-model-list"></datalist>
+                                    <button class="settings-btn" id="btn-ai-models">获取列表</button>
+                                </div>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">连接测试</span>
+                                    <span class="settings-row-desc">用当前配置发送一条最短的对话请求，验证站点、API Key 与模型均可用</span>
+                                </div>
+                                <div class="settings-actions">
+                                    <button class="settings-btn primary" id="btn-ai-test">测试连接</button>
+                                </div>
+                            </div>
+                            <div class="settings-row-desc ai-status" id="ai-status">正在读取配置…</div>
+                        </div>
+
+                        <div class="settings-section ai-config-section">
+                            <div class="settings-section-title">提问上下文</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">默认附带范围</span>
+                                    <span class="settings-row-desc">提问时默认附带哪些笔记；在对话面板顶部可临时切换</span>
+                                </div>
+                                <select class="settings-select" id="setting-ai-scope">
+                                    <option value="current">仅当前笔记</option>
+                                    <option value="all">全部笔记</option>
+                                    <option value="none">不附带笔记</option>
+                                </select>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">单次最多附带笔记</span>
+                                    <span class="settings-row-desc">「全部笔记」范围内最多附带的篇数（按置顶与最近修改排序），取值 1 ~ 100</span>
+                                </div>
+                                <input type="number" class="settings-input short" id="setting-ai-maxnotes" min="1" max="100" step="1">
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">系统提示词</span>
+                                    <span class="settings-row-desc">留空使用内置提示词；填写后用于约束 AI 的身份与回答风格</span>
+                                </div>
+                                <textarea class="settings-input textarea" id="setting-ai-system" spellcheck="false" rows="3" placeholder="例如：作为笔记整理助手，回答按要点分条列出。"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 分类：秘密本（隐藏与密码。隐藏的条目不出现在任何列表里，只在这里能找到） -->
+                    <div class="settings-panel hidden" data-settings-panel="secret">
+                        <div class="settings-section">
+                            <div class="settings-section-title">隐藏与加密的文档</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">秘密本</span>
+                                    <span class="settings-row-desc">在列表中右键一篇笔记或待办即可隐藏或设置密码。隐藏的条目不进入任何列表、搜索、统计、AI 提问范围与小本本，只能在这里找到；设置密码的条目正文以 AES-256-GCM 加密落盘，打开时需输入密码，标题、文件夹、标签与时间等元数据保持明文。密码不会被保存也无法找回，忘记后正文无法恢复</span>
+                                </div>
+                                <div class="settings-actions">
+                                    <button class="settings-btn" id="btn-secret-refresh" title="重新扫描隐藏与加密状态">刷新</button>
+                                </div>
+                            </div>
+                            <div class="secret-list" id="secret-list"></div>
+                            <div class="settings-row-desc sync-status" id="secret-status">正在读取隐藏与加密状态…</div>
+                        </div>
+                    </div>
+
+                    <!-- 分类：数据与存储 -->
+                    <div class="settings-panel hidden" data-settings-panel="data">
+                        <div class="settings-section">
+                            <div class="settings-section-title">数据与存储</div>
+                            <div class="settings-row" id="setting-data-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">数据存放位置</span>
+                                    <span class="settings-row-desc">笔记（notes/）与待办（todos/）均为自带头部元数据的 Markdown 文件，连同偏好配置（config.json）一并保存在该目录中</span>
+                                    <span class="settings-path">
+                                        <span id="setting-data-dir-text">读取中…</span>
+                                        <span class="settings-path-tag" id="setting-data-dir-tag">默认位置</span>
+                                    </span>
+                                </div>
+                                <div class="settings-actions">
+                                    <button class="settings-btn" id="btn-data-open" title="在文件管理器中打开数据目录">打开文件夹</button>
+                                    <button class="settings-btn" id="btn-data-reset" title="恢复为默认数据目录" disabled>恢复默认</button>
+                                    <button class="settings-btn primary" id="btn-data-change" title="选择新的数据存放位置">更改位置</button>
+                                </div>
+                            </div>
+                            <div class="settings-row-desc" id="data-dir-status">
+                                更改位置时会询问是否迁移现有数据；切换即时生效，无需重启应用。
+                            </div>
+
+                            <!-- 文件日志：导入 / 导出都直接读写本机数据目录，与本机存储是同一件事的两面，
+                                 因此并入同一个分区，不再单列一个标题 -->
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">导入文件日志</span>
+                                    <span class="settings-row-desc">选择一份服务端日志（journal.log，一行一条 put / del 操作）并重放到本地数据目录：日志里写过的文件按内容还原，标记为删除的路径在本地同样删除，日志没提到的文件保持原样。导入不改变同步进度、不推送任何内容；若日志里含 config.json，本机偏好设置也会随之变成日志里的那一份</span>
+                                </div>
+                                <div class="settings-actions">
+                                    <button class="settings-btn" id="btn-journal-import">选择日志…</button>
+                                </div>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">文件日志转为文件夹</span>
+                                    <span class="settings-row-desc">把日志的最终状态摊成一个目录树（notes/、todos/、ai_chats/… 与数据目录同构；被删除过的路径不会出现），用来看内容、留档，或直接把这棵目录树选成数据存放位置。导出只写你选中的那个文件夹，本地数据目录不受影响</span>
+                                </div>
+                                <div class="settings-actions">
+                                    <button class="settings-btn" id="btn-journal-export">导出为文件夹…</button>
+                                </div>
+                            </div>
+                            <div class="settings-row-desc sync-status" id="journal-status">日志文件可以在服务端管理页的「数据与日志」里下载：登录后点「下载日志」。</div>
+                        </div>
+
+                        <div class="settings-section">
+                            <div class="settings-section-title">自建同步</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">启用自建同步</span>
+                                    <span class="settings-row-desc">使用自建同步服务端（EsprinServer.py）在多台设备之间同步：同步按操作日志进行，删除同样记为一条操作并重放，因此不会出现删除后被其他设备恢复的情况；开启后每次启动应用都会同步一次（与下方「自动同步」的设置无关，启动时本机最可能落后）；关闭后仅收起下方配置，已填写的地址与令牌原样保留</span>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="setting-sync-enabled">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="settings-row-desc sync-status hidden" id="sync-disabled-hint">自建同步已关闭：不会拉取也不会推送任何内容。</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">设备 ID</span>
+                                    <span class="settings-row-desc">本机自动生成的标识：每条同步操作都带着它，用来在服务端日志里分辨是哪个设备改的；在服务端管理页创建令牌时填进「绑定设备」，该令牌提交的改动就都记在这个设备名下。它由主进程生成一次后固定，保存在配置目录的 sync_state.json，与是否启用同步无关</span>
+                                </div>
+                                <div class="sync-input-stack">
+                                    <div class="sync-input-group">
+                                        <input type="text" class="settings-input mono sync-device-id" id="setting-sync-device-id" readonly spellcheck="false" placeholder="尚未生成">
+                                        <button class="settings-btn icon-only" id="btn-sync-device-id-copy" title="复制设备 ID">
+                                            <span class="ms-icon xs">content_copy</span>
+                                        </button>
+                                    </div>
+                                    <span class="sync-hint" id="sync-device-id-hint">只读；复制后可在服务端绑定到访问令牌</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-section sync-config-section">
+                            <div class="settings-section-title">服务器与同步</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">服务器地址</span>
+                                    <span class="settings-row-desc">同步服务端的地址与端口（以 http / https 开头），可用「测试连接」验证连通性</span>
+                                </div>
+                                <input type="text" class="settings-input mono" id="setting-sync-url" spellcheck="false" placeholder="http://127.0.0.1:8686">
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">服务端项目</span>
+                                    <span class="settings-row-desc">服务端为独立发布的项目，仓库地址：https://github.com/TheOninesixY/EsprinServer（应用内附带的 server/EsprinServer.py 出自该仓库；源码、部署说明与更新见仓库）</span>
+                                </div>
+                                <div class="settings-actions">
+                                    <button class="settings-btn" id="btn-sync-repo" title="在系统浏览器中打开 EsprinServer 项目主页（https://github.com/TheOninesixY/EsprinServer）">打开项目主页</button>
+                                </div>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">访问令牌</span>
+                                    <span class="settings-row-desc">在服务端管理页面（服务器地址 + /admin）创建的令牌；创建时可绑定设备，绑定后该令牌提交的操作都记为该设备。令牌由系统密钥链加密保存（Windows 为 DPAPI、macOS 为钥匙串、Linux 为 libsecret），不写入数据目录，也不随 config.json 复制或分享；服务端以启动参数 --token 指定令牌时填入该值</span>
+                                </div>
+                                <div class="sync-input-stack">
+                                    <div class="sync-input-group">
+                                        <input type="password" class="settings-input mono" id="setting-sync-token" spellcheck="false" placeholder="令牌" autocomplete="off">
+                                        <button class="settings-btn icon-only" id="btn-sync-token-toggle" title="显示 / 隐藏输入的令牌">
+                                            <span class="ms-icon xs">visibility</span>
+                                        </button>
+                                        <button class="settings-btn hidden" id="btn-sync-token-clear" title="清除已保存的令牌">清除</button>
+                                    </div>
+                                    <span class="sync-hint" id="sync-token-hint">尚未保存令牌</span>
+                                </div>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">设备名</span>
+                                    <span class="settings-row-desc">仅用于在服务端日志中区分改动的来源设备（设备另有自动生成的 id，见上方「自建同步 → 设备 ID」）；可留空</span>
+                                </div>
+                                <input type="text" class="settings-input mono" id="setting-sync-device" spellcheck="false" placeholder="例如：台式机">
+                            </div>
+
+                            <!-- 自动同步与同步操作：与上面的服务器、令牌同属一份同步配置，
+                                 因此并入同一个分区（整体显隐仍由 .sync-config-section 控制） -->
+                            <div class="settings-row" id="setting-sync-autosync-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">自动同步</span>
+                                    <span class="settings-row-desc">按间隔自动执行「拉取远端操作 → 重放 → 推送本地改动」；「自定义」可填写秒数或分钟数（5 秒 ~ 24 小时）。这里只决定「多久跑一次」：启用自建同步后每次启动应用都会同步一次，本地保存与删除也即时推送，都不受此设置影响</span>
+                                </div>
+                                <div class="sync-input-stack">
+                                    <select class="settings-select" id="setting-sync-autosync">
+                                        <option value="off">不自动同步</option>
+                                        <option value="5s">每 5 秒</option>
+                                        <option value="1m">每 1 分钟</option>
+                                        <option value="5m">每 5 分钟</option>
+                                        <option value="custom">自定义…</option>
+                                    </select>
+                                    <div class="sync-interval-group hidden" id="setting-sync-autosync-custom-row">
+                                        <input type="number" class="settings-input short mono" id="setting-sync-autosync-value" min="5" step="1" title="按右侧的单位填写，5 秒 ~ 24 小时">
+                                        <select class="settings-select" id="setting-sync-autosync-unit">
+                                            <option value="second">秒</option>
+                                            <option value="minute">分钟</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">操作</span>
+                                    <span class="settings-row-desc">「立即同步」按当前设置同步一次；「首次接入」用于首次配置或服务端已有数据时：先将服务端日志完整重放到本地（以服务端为准，包含删除），再推送服务端不存在的本地文件</span>
+                                </div>
+                                <div class="settings-actions">
+                                    <button class="settings-btn" id="btn-sync-diagnose" title="生成诊断报告（服务端状态、待推送操作与接下来的重放计划）并打开">诊断</button>
+                                    <button class="settings-btn" id="btn-sync-test">测试连接</button>
+                                    <button class="settings-btn" id="btn-sync-import">首次接入</button>
+                                    <button class="settings-btn primary" id="btn-sync-now">立即同步</button>
+                                </div>
+                            </div>
+                            <div class="settings-row-desc sync-status" id="sync-status">正在读取配置…</div>
+                        </div>
+                    </div>
+
+                    <!-- 分类：系统（启动与托盘 / 更新与版本） -->
+                    <div class="settings-panel hidden" data-settings-panel="system">
+                        <!-- 分区一：启动与托盘 —— 两个开关说的都是「应用怎么在系统里待着」 -->
+                        <div class="settings-section">
+                            <div class="settings-section-title">启动与托盘</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">开机时自动启动</span>
+                                    <span class="settings-row-desc">将 EsprinNemo 登记到系统登录启动项：登录后自动启动并打开主窗口；可配合「显示托盘图标」，从托盘图标唤回主窗口或退出</span>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="setting-auto-launch">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="settings-row-desc" id="auto-launch-status">正在读取开机自启状态…</div>
+
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">显示托盘图标</span>
+                                    <span class="settings-row-desc">在任务栏通知区域显示 EsprinNemo 图标：右键菜单可打开主窗口 / 小本本、新建笔记、新建待办或进入设置；左键单击将主窗口唤回前台</span>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="setting-tray-enabled">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="settings-row-desc" id="tray-status">正在读取托盘状态…</div>
+                        </div>
+
+                        <!-- 更新与版本：并入「系统」分类；便携版整块摘掉（见 scripts/update.js） -->
+                        <div class="settings-section settings-update-block">
+                            <div class="settings-section-title">自动更新</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">自动检查并下载更新</span>
+                                    <span class="settings-row-desc">启动后自动检查新版本，发现新版本时在后台下载安装包；下载完成后弹窗询问是否立即重启安装（弹窗中的「永不提醒」可关闭本项），未经确认不会替换应用</span>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="setting-auto-update">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">使用 gh-proxy 加速</span>
+                                    <span class="settings-row-desc">检查更新与下载安装包时先经 gh-proxy 公共代理转发，可缓解直连 GitHub 缓慢或不通的问题；代理不可用或响应异常时自动回落直连</span>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="setting-gh-proxy">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">检查更新</span>
+                                    <span class="settings-row-desc" id="update-status">正在读取更新状态…</span>
+                                </div>
+                                <div class="settings-actions">
+                                    <button class="settings-btn" id="btn-update-page" title="在系统浏览器中打开更新发布页">打开发布页</button>
+                                    <button class="settings-btn" id="btn-update-check" title="立即向更新源检查新版本">检查更新</button>
+                                    <button class="settings-btn hidden" id="btn-update-cancel" title="停止下载并丢弃已下载的部分">取消下载</button>
+                                    <button class="settings-btn primary hidden" id="btn-update-download">下载更新</button>
+                                    <button class="settings-btn primary hidden" id="btn-update-install" title="退出应用并运行安装程序，升级完成后自动重新打开">重启并安装</button>
+                                    <button class="settings-btn hidden" id="btn-update-open-file" title="在当前运行方式下只能手动安装">打开安装包</button>
+                                </div>
+                            </div>
+
+                            <div class="update-progress hidden" id="update-progress">
+                                <div class="update-progress-track">
+                                    <div class="update-progress-bar" id="update-progress-bar"></div>
+                                </div>
+                                <div class="update-progress-text">
+                                    <span id="update-progress-text">准备下载…</span>
+                                    <span id="update-progress-percent">0%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-section settings-update-block hidden" id="update-notes-section">
+                            <div class="settings-section-title">新版本说明</div>
+                            <div class="update-notes">
+                                <div class="update-notes-head">
+                                    <span class="update-notes-version" id="update-notes-version"></span>
+                                    <span class="update-notes-date" id="update-notes-date"></span>
+                                </div>
+                                <!-- 新版本说明按 Markdown 渲染（见 scripts/update.js 的 setReleaseNotesBody） -->
+                                <div class="update-notes-body markdown-body" id="update-notes-body"></div>
+                            </div>
+                        </div>
+
+                        <div class="settings-section settings-update-block">
+                            <div class="settings-section-title">版本信息</div>
+                            <!-- 版本号下面一行展示项目地址（这里原本放的是「更新源」） -->
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">Esprin Nemo <span id="update-current-version">…</span></span>
+                                    <span class="settings-row-desc" id="update-repo-url">正在读取项目地址…</span>
+                                </div>
+                                <div class="settings-actions">
+                                    <button class="settings-btn" id="btn-update-repo" title="在系统浏览器中打开项目主页">打开项目主页</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 当前版本说明：取自更新源上 tag 等于当前版本的那条 release，同样按 Markdown 渲染 -->
+                        <div class="settings-section settings-update-block">
+                            <div class="settings-section-title">当前版本说明</div>
+                            <div class="update-notes">
+                                <div class="update-notes-head">
+                                    <span class="update-notes-version" id="update-current-notes-version"></span>
+                                    <span class="update-notes-date" id="update-current-notes-date"></span>
+                                </div>
+                                <div class="update-notes-body markdown-body" id="update-current-notes-body"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Item Context Menu（菜单项按条目类型与状态动态生成） -->
+    <div class="context-menu hidden" id="note-context-menu"></div>
+
+    <!-- Folder Context Menu（重命名 / 删除，文件夹条目右键弹出） -->
+    <div class="context-menu hidden" id="folder-context-menu"></div>
+
+    <!-- New Item Menu（点侧边栏顶部「新建」或空状态按钮后展开：新建笔记 / 新建待办）
+         外观直接复用下拉菜单的一套（见 styles/dropdown.css），位置由 scripts/context_menu.js 计算 -->
+    <div class="dropdown-menu new-item-menu hidden" id="new-item-menu"></div>
+
+    <!-- Toast Container -->
+    <div class="toast-box" id="toast-container"></div>
+
+    <script src="./scripts/state.js"></script>
+    <script src="./scripts/storage.js"></script>
+    <script src="./scripts/markdown.js"></script>
+    <script src="./scripts/ui.js"></script>
+    <script src="./scripts/dropdown.js"></script>
+    <script src="./scripts/window_controls.js"></script>
+    <script src="./scripts/appearance.js"></script>
+    <script src="./scripts/theme_color.js"></script>
+    <script src="./scripts/fonts.js"></script>
+    <script src="./scripts/mode.js"></script>
+    <script src="./scripts/ai_settings.js"></script>
+    <script src="./scripts/ai_chats.js"></script>
+    <script src="./scripts/ai_files.js"></script>
+    <script src="./scripts/ai_agent.js"></script>
+    <script src="./scripts/ai.js"></script>
+    <script src="./scripts/notes.js"></script>
+    <script src="./scripts/secret.js"></script>
+    <script src="./scripts/todos.js"></script>
+    <script src="./scripts/scratchpad.js"></script>
+    <script src="./scripts/editor.js"></script>
+    <script src="./scripts/voice_notes.js"></script>
+    <script src="./scripts/settings.js"></script>
+    <script src="./scripts/data_location.js"></script>
+    <script src="./scripts/sync_server.js"></script>
+    <script src="./scripts/journal_file.js"></script>
+    <script src="./scripts/tray.js"></script>
+    <script src="./scripts/auto_launch.js"></script>
+    <script src="./scripts/update.js"></script>
+    <script src="./scripts/render.js"></script>
+    <script src="./scripts/context_menu.js"></script>
+    <script src="./scripts/events.js"></script>
+    <script src="./scripts/app.js"></script>
+</body>
+</html>

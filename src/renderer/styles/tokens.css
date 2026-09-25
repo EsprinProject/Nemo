@@ -1,0 +1,112 @@
+/* 设计令牌：主题色板、圆角与字体族变量；浅色主题由 :root.light 覆盖 */
+
+/* 品牌字体：Mohave 可变字重字体（仅用于左上角应用名） */
+@font-face {
+    font-family: 'Mohave';
+    src: url('../fonts/Mohave/Mohave-VariableFont_wght.ttf') format('truetype-variations'),
+         url('../fonts/Mohave/Mohave-VariableFont_wght.ttf') format('truetype');
+    font-weight: 300 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+:root {
+    --bg-body: #0d1117;
+    --bg-titlebar: #161b22;
+    --bg-sidebar: #0d1117;
+    --bg-list: #161b22;
+    --bg-editor: #0d1117;
+    /* 浮起表面：比所在容器亮一档，用于「当前项」——标签页当前页、分段控件（编辑 / 分屏 / 预览）选中项。
+       深色主题里标题栏与工作区本来就只差一档，选中项若沿用这两个色就分辨不出当前选中了谁 */
+    --bg-elevated: #21262d;
+    --border-color: #30363d;
+    --border-light: rgba(255, 255, 255, 0.08);
+
+    --text-primary: #f0f6fc;
+    --text-secondary: #8b949e;
+    --text-muted: #6e7681;
+
+    --accent: #58a6ff;
+    --accent-bg: rgba(56, 139, 253, 0.15);
+    /* 强调色底面上的文字色：由设置页的"主题色"按亮度自动计算（见 applyAccentColor） */
+    --accent-fg: #ffffff;
+    --danger: #f85149;
+    --danger-bg: rgba(248, 81, 73, 0.15);
+    /* 提醒色：目前用于弹窗的警告图标，三个窗口共用同一套取值 */
+    --warning: #d29922;
+
+    /* 左上角应用名专用颜色（深色模式） */
+    --brand: #E6E8F3;
+    /* 应用名实际显示色：默认取品牌色，可在设置页切换为黑/白或跟随主题色 */
+    --brand-fg: var(--brand);
+
+    --item-hover: rgba(255, 255, 255, 0.04);
+    --item-active: rgba(255, 255, 255, 0.08);
+
+    /* 圆角基础值：最终生效的 --radius-sm / --radius-md 由 styles/radius.css 按
+       用户选择的「圆角尺度」换算（默认风格为 6px / 8px，Alom 风格在 alom.css 中放大一档） */
+    --radius-base-sm: 6px;
+    --radius-base-md: 8px;
+
+    /* 动效：时长与缓动曲线。styles/motion.css 里的进场动画与换肤交叉淡入统一引用这几个令牌，
+       想整体调快 / 调慢只改这里；各组件原有的过渡时长维持原值不强行统一（改动面大、收益有限），
+       新加的动效一律走令牌 */
+    --motion-base: 0.18s;
+    --motion-slow: 0.26s;
+    /* 换肤时的整屏颜色过渡时长，与 scripts/appearance.js 的 APPEARANCE_FADE_MS 对齐 */
+    --motion-crossfade: 0.25s;
+    /* 缓动：out 用于进场（起步快、到位稳），standard 用于退场 */
+    --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+    /* 字体族：西文与 CJK 分开配置，浏览器按字符逐个回退（西文优先，匹配不到的字符再交给 CJK 字体） */
+    --font-ui-latin: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Ubuntu", "Roboto", "Helvetica Neue", Arial;
+    --font-ui-cjk: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei";
+    --font-doc-latin: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Ubuntu", "Roboto", "Helvetica Neue", Arial;
+    --font-doc-cjk: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei";
+
+    /* 界面字体与文档字体（可被设置页覆盖，见 applyFonts） */
+    --font-sans: var(--font-ui-latin), var(--font-ui-cjk), sans-serif;
+    --font-doc: var(--font-doc-latin), var(--font-doc-cjk), var(--font-ui-cjk), sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", Consolas, "Fira Code", monospace;
+}
+
+:root.light {
+    --bg-body: #ffffff;
+    --bg-titlebar: #f6f8fa;
+    --bg-sidebar: #f6f8fa;
+    --bg-list: #ffffff;
+    --bg-editor: #ffffff;
+    /* 浅色下选中项用纯白：容器本身已是一层浅灰，白色即为「浮起」 */
+    --bg-elevated: #ffffff;
+    --border-color: #d0d7de;
+    --border-light: rgba(0, 0, 0, 0.06);
+
+    --text-primary: #1f2328;
+    --text-secondary: #656d76;
+    --text-muted: #8c959f;
+
+    --accent: #0969da;
+    --accent-bg: rgba(9, 105, 218, 0.1);
+    --danger: #cf222e;
+    --danger-bg: rgba(207, 34, 46, 0.1);
+    --warning: #bf8700;
+
+    /* 左上角应用名专用颜色（浅色模式） */
+    --brand: #280C7D;
+
+    --item-hover: rgba(0, 0, 0, 0.04);
+    --item-active: rgba(0, 0, 0, 0.08);
+}
+
+/* 应用名文字颜色模式：由设置页写入 <html data-brand-color>（brand / mono / accent）。
+   brand 为默认，沿用上面的 --brand；mono 按明暗主题取白或黑；accent 跟随当前主题色。 */
+:root[data-brand-color="mono"] {
+    --brand-fg: #ffffff;
+}
+:root.light[data-brand-color="mono"] {
+    --brand-fg: #000000;
+}
+:root[data-brand-color="accent"] {
+    --brand-fg: var(--accent);
+}

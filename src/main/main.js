@@ -227,7 +227,7 @@ configureScratchpadWindow({
 // AI 助手：站点与模型随数据目录存放，API Key 由系统密钥链单独保管；两者都只由主进程读取
 configureAiService({ getDataDir: resolveDataDir });
 
-/* 自建同步（操作日志模型，服务端见 server/EsprinServer.py）：
+/* 自建同步（操作日志模型，服务端见 server/sync.py）：
    服务器地址与设备名取自 config.json，访问令牌由系统密钥链单独保管；
    拉取到的操作会直接改动本地文件，因此改完之后要告知主窗口重新载入数据 */
 configureSyncServer({
@@ -610,8 +610,8 @@ ipcMain.handle('data:open-dir', async () => {
 /* 界面里的固定站外入口：渲染进程只传键名，地址留在主进程，
    渲染进程因此无法要求主进程打开任意地址。 */
 const EXTERNAL_LINKS = {
-  // 自建同步的服务端项目（设置 → 数据与存储 → 自建同步 → 服务端）
-  serverRepo: 'https://github.com/TheOninesixY/EsprinServer'
+  // 自建同步的服务端项目（设置 → 数据与存储 → 自建同步 → 服务端），与 EsprinProject/Sync 仓库对应
+  serverRepo: 'https://github.com/EsprinProject/Sync'
 };
 
 // 固定站外链接：交给系统浏览器打开

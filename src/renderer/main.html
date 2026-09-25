@@ -919,7 +919,7 @@
                             <div class="settings-row">
                                 <div class="settings-row-info">
                                     <span class="settings-row-label">启用自建同步</span>
-                                    <span class="settings-row-desc">使用自建同步服务端（EsprinServer.py）在多台设备之间同步：同步按操作日志进行，删除同样记为一条操作并重放，因此不会出现删除后被其他设备恢复的情况；开启后每次启动应用都会同步一次（与下方「自动同步」的设置无关，启动时本机最可能落后）；关闭后仅收起下方配置，已填写的地址与令牌原样保留</span>
+                                    <span class="settings-row-desc">使用自建同步服务端（sync.py）在多台设备之间同步：同步按操作日志进行，删除同样记为一条操作并重放，因此不会出现删除后被其他设备恢复的情况；开启后每次启动应用都会同步一次（与下方「自动同步」的设置无关，启动时本机最可能落后）；关闭后仅收起下方配置，已填写的地址与令牌原样保留</span>
                                 </div>
                                 <label class="switch">
                                     <input type="checkbox" id="setting-sync-enabled">
@@ -956,10 +956,10 @@
                             <div class="settings-row">
                                 <div class="settings-row-info">
                                     <span class="settings-row-label">服务端项目</span>
-                                    <span class="settings-row-desc">服务端为独立发布的项目，仓库地址：https://github.com/TheOninesixY/EsprinServer（应用内附带的 server/EsprinServer.py 出自该仓库；源码、部署说明与更新见仓库）</span>
+                                    <span class="settings-row-desc">服务端为独立发布的项目，仓库地址：https://github.com/EsprinProject/Sync（应用内附带的 server/sync.py 出自该仓库；源码、部署说明与更新见仓库）</span>
                                 </div>
                                 <div class="settings-actions">
-                                    <button class="settings-btn" id="btn-sync-repo" title="在系统浏览器中打开 EsprinServer 项目主页（https://github.com/TheOninesixY/EsprinServer）">打开项目主页</button>
+                                    <button class="settings-btn" id="btn-sync-repo" title="在系统浏览器中打开 EsprinSync 项目主页（https://github.com/EsprinProject/Sync）">打开项目主页</button>
                                 </div>
                             </div>
                             <div class="settings-row">

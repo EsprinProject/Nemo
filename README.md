@@ -8,8 +8,8 @@
 
 | 资源 | 地址 |
 | --- | --- |
-| 下载与更新 | [GitHub Releases](https://github.com/TheOninesixY/EsprinNemo/releases) |
-| 同步服务端 | [TheOninesixY/EsprinServer](https://github.com/TheOninesixY/EsprinServer) |
+| 下载与更新 | [GitHub Releases](https://github.com/EsprinProject/Nemo/releases) |
+| 同步服务端 | [EsprinProject/Sync](https://github.com/EsprinProject/Sync) |
 
 ![主界面](readme/screenshot-3.0.1.png)
 
@@ -140,7 +140,7 @@
 
 默认关闭，可在「设置 → 数据与存储 → 自建同步」中开启；未填写服务器地址时不会发起任何请求。
 
-- **自建服务端**：配套服务端为独立仓库 [TheOninesixY/EsprinServer](https://github.com/TheOninesixY/EsprinServer)，主体是单个 Python 文件（`EsprinServer.py`，仅使用标准库）。数据以「操作日志」形式保存在服务端目录，将日志从头重放一遍即为全部数据
+- **自建服务端**：配套服务端为独立仓库 [EsprinProject/Sync](https://github.com/EsprinProject/Sync)，主体是单个 Python 文件（`sync.py`，仅使用标准库）。数据以「操作日志」形式保存在服务端目录，将日志从头重放一遍即为全部数据
 - **删除即删除**：每次保存与删除都会生成一条操作（put / del），服务端为每条操作分配全局递增序号并追加进日志；客户端只记录「已应用到第几号」，同步时拉取其后的操作并重放。删除是一条明确的 tombstone，重放结果与提交方一致，不会出现「A 删除的笔记被 B 依据本地缺文件重新补回」
 - **回收 ID**：条目被彻底删除后，服务端把它的路径留在删除记录里（老副本因此不会被推回来），同时把那个 ID 作为「可复用 ID」收进回收池；**删掉它的那台设备本地立刻就能把这个 ID 用在下一次新建上**（不必等同步往返，新建的条目直接就是同一个 ID）。服务端会给其他设备发放回收池里的 ID，领走的会被占住一会儿（条目落盘即释放，过期自动回到池子），两台设备同时新建不会撞到同一个 ID；只有「服务端见过那条删除」的设备才能领，所以不会出现刚用回收 ID 建的条目被自己还没拉到的删除又擦掉
 - **重放不回退**：本机自己推上去、服务端已受理的操作，在重放时会跳过（本地早就落盘了）——这正是「删掉一个条目、又用它的 ID 新建」之后，那条删除不会把新条目一起删掉的原因
@@ -370,14 +370,14 @@ data_path.json 中的位置（安装时选择或应用内更改）
 
 ### 服务端
 
-服务端为独立仓库 [TheOninesixY/EsprinServer](https://github.com/TheOninesixY/EsprinServer)，主体是单个 Python 文件（`EsprinServer.py`，仅使用标准库）。在存放数据的机器上运行：
+服务端为独立仓库 [EsprinProject/Sync](https://github.com/EsprinProject/Sync)，主体是单个 Python 文件（`sync.py`，仅使用标准库）。在存放数据的机器上运行：
 
 ```bash
 # 启动服务端（Python 3，仅使用标准库）
-python EsprinServer.py --host 0.0.0.0 --port 8686 --data ./esprin-data
+python sync.py --host 0.0.0.0 --port 8686 --data ./esprin-data
 
 # 离线自测：覆盖全部接口、重启后重建索引与管理后台
-python EsprinServer.py --selftest
+python sync.py --selftest
 ```
 
 - 数据布局：服务端支持多个账户，默认只有一个名为 `admin` 的内置账户（它也管理服务端）。每个账户一份独立的操作日志 `<data>/users/<账户 id>/journal.log`（一行一条操作，JSON Lines），把日志从头重放一遍即为该账户的全部数据。追加写入，只有整理（彻底删除后 / 管理后台的「整理日志」）会重写它：已彻底删除条目的正文与历史被抹掉，只留一行删除标记，其余操作的序号不变。旧版单账户布局（`<data>/admin.json` 与数据目录根下的日志、令牌）在首次启动时自动迁移：日志与令牌搬进 `<data>/users/admin/`，`admin.json` 里的密码摘要并入内置账户，原文件归档为 `admin.json.migrated`
@@ -506,11 +506,11 @@ IPC 通道：
 
 ### 自测
 
-在 EsprinServer 仓库中执行：
+在 EsprinSync 仓库中执行：
 
 ```bash
 # 服务端：接口、幂等、越界路径、重启后重建索引、管理后台（设密码 / 登录 / 令牌增删改查 / 设备绑定 / 日志概览与下载）
-python EsprinServer.py --selftest
+python sync.py --selftest
 
 # 客户端同步逻辑：删除不复活、远端更新覆盖本地、本地更新不被旧操作覆盖，以及日志文件的解析、重放与导出目标校验
 node sync-selftest.js
@@ -613,12 +613,12 @@ API Key **不随数据目录保存**，也不写入 `data/config.json`。
 | 下载更新 / 取消下载 | 手动下载当前版本（仅在自动下载被关闭、或自动下载失败后需要时出现），下载中可随时取消并丢弃已下载的部分 |
 | 重启并安装 / 打开安装包 | 安装版直接调用安装包完成升级（无向导、装完自动重开）；便携版与开发运行只打开安装包所在目录，由用户手动升级 |
 | 打开发布页 | 在系统浏览器中打开 GitHub Releases，便于查看完整更新说明或手动下载 |
-| 项目地址 | 展示仓库地址 `https://github.com/TheOninesixY/EsprinNemo`，可用「打开项目主页」在系统浏览器中打开 |
+| 项目地址 | 展示仓库地址 `https://github.com/EsprinProject/Nemo`，可用「打开项目主页」在系统浏览器中打开 |
 | 新版本说明 / 当前版本说明 | 均取自更新源上对应 release 的正文，按 Markdown 渲染（先转义 HTML，发布页中的 `<script>` 只会以纯文本形式出现）；当前版本的说明来自 tag 等于当前版本的那条 release，本地构建的未发布版本会显示「更新源上没有找到对应的发布记录」，不影响其他功能 |
 
 更新源与流程：
 
-- 更新源为 GitHub 仓库 `TheOninesixY/EsprinNemo` 的 Releases（定义在 `src/main/updater.js` 的 `UPDATE_REPO`，更换仓库时只需修改此处）
+- 更新源为 GitHub 仓库 `EsprinProject/Nemo` 的 Releases（定义在 `src/main/updater.js` 的 `UPDATE_REPO`，更换仓库时只需修改此处）
 - 检查走 `GET https://api.github.com/repos/{owner}/{repo}/releases/latest`，取该 release 的 tag（形如 `v0.0.0`）与当前版本逐段数值比较（支持 `2.1.10 > 2.1.9`），仅当高于当前版本时提醒更新
 - 当前版本说明走 `GET https://api.github.com/repos/{owner}/{repo}/releases/tags/v<当前版本>`（取不到时按不带 `v` 的写法再试一次），404 视为该版本没有发布记录；同一版本仅请求一次，之后使用缓存
 - 安装包仅接受同时满足两个条件的附件：文件名中包含独立的 `setup` 段（由点 / 空格 / 连字符 / 下划线分隔，如 `EsprinNemo.Setup.v2.1.5.exe`、`en.Setup.123.exe`），且以 `.exe` 结尾。发布页没有此类附件时，设置页会提示前往发布页手动下载。下载至系统临时目录，按 `Content-Length` 校验体积，并检查文件头（`MZ`）
@@ -667,7 +667,7 @@ API Key **不随数据目录保存**，也不写入 `data/config.json`。
 └── readme/                 # 文档配图
 ```
 
-自建同步服务端不在本仓库内，位于独立仓库 [TheOninesixY/EsprinServer](https://github.com/TheOninesixY/EsprinServer)，其目录包含 `EsprinServer.py`（日志与 HTTP API）、`web/`（网页版客户端，服务端在根路径托管）、`manager/`（管理页面静态文件，挂在 `/admin`）与 `sync-selftest.js`（客户端同步逻辑自测）。
+自建同步服务端不在本仓库内，位于独立仓库 [EsprinProject/Sync](https://github.com/EsprinProject/Sync)，其目录包含 `sync.py`（日志与 HTTP API）、`web/`（网页版客户端，服务端在根路径托管）、`manager/`（管理页面静态文件，挂在 `/admin`）与 `sync-selftest.js`（客户端同步逻辑自测）。
 
 > 渲染进程按「经典脚本」方式拆分：`src/renderer/scripts/` 下的文件共享同一个全局作用域，`state.js`
 > 必须在其它脚本之前加载，`app.js` 负责在 `window.onload` 时启动应用。
@@ -688,4 +688,4 @@ API Key **不随数据目录保存**，也不写入 `data/config.json`。
 
 ---
 
-问题与建议请提交 [Issue](https://github.com/TheOninesixY/EsprinNemo/issues)。
+问题与建议请提交 [Issue](https://github.com/EsprinProject/Nemo/issues)。

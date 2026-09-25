@@ -1,4 +1,4 @@
-// Esprin Nemo 自建同步（主进程）：操作日志模型，服务端见 server/EsprinServer.py。
+// Esprin Nemo 自建同步（主进程）：操作日志模型，服务端见 server/sync.py。
 //
 // 与 WebDAV 那套「扫目录、比时间」的根本区别在于「什么才算发生了事」：
 //   * 旧模型：只能看到「远端有这个文件 / 没有这个文件」。A 删了一篇笔记，B 看到自己缺文件，
@@ -346,7 +346,7 @@ function decideApply(op, { localNewerPending = false, localExists = false, local
 function describeHttpError(status) {
   if (status === 401) return '同步令牌不正确（服务端要求 Bearer 令牌）';
   if (status === 403) return '服务端拒绝访问';
-  if (status === 404) return '接口不存在，请确认地址指向 EsprinServer 且版本一致';
+  if (status === 404) return '接口不存在，请确认地址指向 EsprinSync 且版本一致';
   if (status >= 500) return '服务端返回错误';
   return `请求失败（HTTP ${status}）`;
 }
@@ -391,7 +391,7 @@ async function apiRequest(method, pathname, { body, timeoutMs = REQUEST_TIMEOUT_
       const detail = parsed && parsed.error ? parsed.error : describeHttpError(response.status);
       return { ok: false, status: response.status, error: detail };
     }
-    if (!parsed) return { ok: false, error: '服务器返回的不是 JSON，请确认地址指向 EsprinServer' };
+    if (!parsed) return { ok: false, error: '服务器返回的不是 JSON，请确认地址指向 EsprinSync' };
     return { ok: true, status: response.status, data: parsed };
   } catch (error) {
     const aborted = error && error.name === 'AbortError';
@@ -1321,7 +1321,7 @@ function registerSyncIpc() {
 
     return {
       ok: true,
-      server: health.data.name || 'EsprinServer',
+      server: health.data.name || 'EsprinSync',
       version: health.data.version || 1,
       latestSeq: stateResult.data.latestSeq || 0,
       fileCount: Object.keys(stateResult.data.files || {}).length,

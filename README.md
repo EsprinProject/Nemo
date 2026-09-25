@@ -10,6 +10,7 @@
 | --- | --- |
 | 下载与更新 | [GitHub Releases](https://github.com/EsprinProject/Nemo/releases) |
 | 同步服务端 | [EsprinProject/Sync](https://github.com/EsprinProject/Sync) |
+| 网页版客户端 | [EsprinProject/Web](https://github.com/EsprinProject/Web) |
 
 ![主界面](readme/screenshot-3.0.1.png)
 
@@ -388,10 +389,11 @@ python sync.py --selftest
 - 可复用 ID：`/sync/state` 里的 `recyclable` 是回收池的大小；`GET /sync/ids` 列出池子，`POST /sync/ids/claim`（`{device, kind, count, since}`）把最近删掉的几个 ID 占住并发给调用方，其中 `since` 是调用方「已应用到第几号」——其他设备只发序号已跟上的，发起删除的那一台可以不等（它本地那份早就删掉了），序号没跟上的用 `pending` 报回去
 - 幂等：每条操作带 `opId`，客户端重试时重复提交不会重复写入日志
 - 路径安全：只接受数据目录内的相对路径，`..`、绝对路径一律拒绝
+- 网页版客户端：界面在独立仓库 [EsprinProject/Web](https://github.com/EsprinProject/Web)，服务端启动时把它克隆到 `web/` 并在根路径 `/` 托管；本地没有那份克隆时根路径返回一页说明（`--web-repo` / `--web-ref` 换源，`--web-update` 启动时拉取一次，`--no-web-clone` 只用现成的 `web/`）
 
 ### 管理后台
 
-启动后在浏览器中打开「服务器地址 + `/admin`」（例如 `http://192.168.1.10:8686/admin`）。根路径 `/` 留给网页版客户端（服务端托管仓库 `web/` 目录），管理后台与它分开挂在 `/admin` 下。管理页面是仓库 `manager/` 目录下的静态文件（`index.html`、`app.css`、`app.js`、`fonts/`），由服务端按请求读取后原样返回，因此修改页面无需改动或重启服务端。服务端可以供多个账户使用，各自的笔记与待办互不可见；面板上的「正在管理的账户」决定令牌与日志两节作用在哪个账户上。
+启动后在浏览器中打开「服务器地址 + `/admin`」（例如 `http://192.168.1.10:8686/admin`）。根路径 `/` 留给网页版客户端（独立仓库 [EsprinProject/Web](https://github.com/EsprinProject/Web) 的克隆，服务端启动时放在 `web/` 目录），管理后台与它分开挂在 `/admin` 下。管理页面是仓库 `manager/` 目录下的静态文件（`index.html`、`app.css`、`app.js`、`fonts/`），由服务端按请求读取后原样返回，因此修改页面无需改动或重启服务端。服务端可以供多个账户使用，各自的笔记与待办互不可见；面板上的「正在管理的账户」决定令牌与日志两节作用在哪个账户上。
 
 - **账户**：服务端默认只有内置账户 `admin`，其余账户只能由管理员在面板的「账户」一节新建（账户名 1~32 个字符、不能重名，密码至少 8 位）。新建的账户是普通账户，只能登录网页版客户端同步自己的数据；勾选「管理员」后它也能进入管理面板。内置账户不可删除、不可停用、不可取消管理员、不可改名（它的名字同时是数据目录名），且至少保留一个账户
 - **首次打开**引导设置内置账户的密码（至少 8 位），随后进入管理面板；密码以 PBKDF2-HMAC-SHA256（20 万次迭代 + 随机盐）按账户各自存为摘要写入 `<data>/users.json`，不可反推原文，后续登录在同一页面完成（输入账户名 + 密码；本页只让管理员登录）
@@ -510,6 +512,7 @@ IPC 通道：
 
 ```bash
 # 服务端：接口、幂等、越界路径、重启后重建索引、管理后台（设密码 / 登录 / 令牌增删改查 / 设备绑定 / 日志概览与下载）
+# 页面一节看 web/：那里没克隆 EsprinProject/Web 时跳过，不算通过
 python sync.py --selftest
 
 # 客户端同步逻辑：删除不复活、远端更新覆盖本地、本地更新不被旧操作覆盖，以及日志文件的解析、重放与导出目标校验
@@ -667,7 +670,7 @@ API Key **不随数据目录保存**，也不写入 `data/config.json`。
 └── readme/                 # 文档配图
 ```
 
-自建同步服务端不在本仓库内，位于独立仓库 [EsprinProject/Sync](https://github.com/EsprinProject/Sync)，其目录包含 `sync.py`（日志与 HTTP API）、`web/`（网页版客户端，服务端在根路径托管）、`manager/`（管理页面静态文件，挂在 `/admin`）与 `sync-selftest.js`（客户端同步逻辑自测）。
+自建同步服务端不在本仓库内，位于独立仓库 [EsprinProject/Sync](https://github.com/EsprinProject/Sync)，其目录包含 `sync.py`（日志与 HTTP API）、`manager/`（管理页面静态文件，挂在 `/admin`）与 `sync-selftest.js`（客户端同步逻辑自测）。网页版客户端另在独立仓库 [EsprinProject/Web](https://github.com/EsprinProject/Web)，服务端启动时克隆到 `web/`（该目录已 gitignore，不在 Sync 仓库里）并从根路径托管。
 
 > 渲染进程按「经典脚本」方式拆分：`src/renderer/scripts/` 下的文件共享同一个全局作用域，`state.js`
 > 必须在其它脚本之前加载，`app.js` 负责在 `window.onload` 时启动应用。

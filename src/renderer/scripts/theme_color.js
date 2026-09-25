@@ -78,14 +78,16 @@ function applyAccentColor() {
     rootStyle.setProperty('--accent-fg', accentForegroundColor(hex));
 }
 
-// 生效的强调色：未自定义时取当前明暗主题与主题风格的默认值，仅用于预览与色板选中判断
-// （未自定义时真实颜色由 CSS 变量兜底：默认风格取 tokens.css，Alom 风格取 alom.css）
+// 生效的强调色：未自定义时取当前明暗主题与界面风格的默认值，仅用于预览与色板选中判断
+// （未自定义时真实颜色由 CSS 变量兜底：默认风格取 tokens.css，Alom 取 alom.css，魔幻取 magic_style.css）
 function currentAccentColor() {
     const custom = normalizeAccentColor(State.accentColor);
     if (custom) return custom;
-    const isAlomStyle = normalizeThemeStyle(State.themeStyle) === 'alom';
-    if (isLightThemeActive()) return isAlomStyle ? '#007aff' : '#0969da';
-    return isAlomStyle ? '#0a84ff' : '#58a6ff';
+    const style = normalizeThemeStyle(State.themeStyle);
+    const light = isLightThemeActive();
+    if (style === 'magic') return light ? '#7c3aed' : '#8b5cf6';
+    if (style === 'alom') return light ? '#007aff' : '#0a84ff';
+    return light ? '#0969da' : '#58a6ff';
 }
 
 function buildAccentSwatches() {

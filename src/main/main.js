@@ -179,9 +179,11 @@ function resolveBrandColor() {
   return raw === 'mono' || raw === 'accent' ? raw : 'brand';
 }
 
-// 主题风格（皮肤）：alom 为 Alom 风格；小本本据此切换配色（见 styles/alom.css）
+// 主题风格（皮肤）：alom 为 Alom 风格，magic 为魔幻风格；
+// 小本本与弹窗据此切换配色（见 renderer/styles/alom.css 与 renderer/styles/magic_style.css）
 function resolveThemeStyle() {
-  return readUserConfig().themeStyle === 'alom' ? 'alom' : 'default';
+  const raw = readUserConfig().themeStyle;
+  return raw === 'alom' || raw === 'magic' ? raw : 'default';
 }
 
 // 圆角尺度：square（方）/ slight（微圆角）/ default（默认）/ large（大）；

@@ -20,7 +20,8 @@ const FONT_ARG_NAMES = {
 // 窗口创建到页面首屏绘制之间露出的就是它
 const THEME_BG = {
   default: { dark: '#0d1117', light: '#ffffff' },
-  alom: { dark: '#1c1c1e', light: '#ffffff' }
+  alom: { dark: '#1c1c1e', light: '#ffffff' },
+  magic: { dark: '#0a0d1f', light: '#f7f5ff' }
 };
 
 // 读取配置的函数可能抛错（例如配置文件损坏），统一在这里兜底，并保留日志便于排查
@@ -40,7 +41,7 @@ function normalizeTheme(value) {
 }
 
 function normalizeStyle(value) {
-  return value === 'alom' ? 'alom' : 'default';
+  return value === 'alom' || value === 'magic' ? value : 'default';
 }
 
 function normalizeRadius(value) {

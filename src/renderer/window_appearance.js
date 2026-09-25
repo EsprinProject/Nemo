@@ -64,9 +64,11 @@
         document.documentElement.classList.toggle('light', theme === 'light');
     }
 
-    // 主题风格（皮肤）：只挂属性，配色交给 styles/alom.css 的 :root[data-theme-style="alom"] 解析
+    // 主题风格（皮肤）：只挂属性，配色交给 styles/alom.css 与 styles/magic_style.css 的
+    // :root[data-theme-style="..."] 解析
     function applyThemeStyle(style) {
-        document.documentElement.dataset.themeStyle = style === 'alom' ? 'alom' : 'default';
+        const known = style === 'alom' || style === 'magic' ? style : 'default';
+        document.documentElement.dataset.themeStyle = known;
     }
 
     // 圆角尺度：同样只挂属性，具体像素由 styles/radius.css 换算成 --radius-* 令牌

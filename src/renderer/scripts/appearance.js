@@ -4,7 +4,7 @@
    default 使用 tokens.css 里的内置配色；alom 由 alom.css 覆盖设计令牌。 */
 
 // 可选值：default（内置风格）/ alom（Alom 风格）
-const THEME_STYLE_VALUES = ['default', 'alom'];
+const THEME_STYLE_VALUES = ['default', 'alom', 'magic'];
 
 /* 换肤交叉淡入（样式见 styles/motion.css 的 html.appearance-fading）：
    切换明暗主题 / 界面风格时，整棵界面用 0.25s 过渡到新配色，而不是整屏硬切。
@@ -34,7 +34,7 @@ function normalizeThemeStyle(value) {
     return THEME_STYLE_VALUES.includes(value) ? value : 'default';
 }
 
-// 只挂属性，具体配色交给 alom.css 的 :root[data-theme-style="alom"] 解析：
+// 只挂属性，具体配色交给 alom.css / magic_style.css 的 :root[data-theme-style="..."] 解析：
 // 这样切换明暗主题或主题色时无需重新应用风格
 function applyThemeStyle() {
     document.documentElement.dataset.themeStyle = normalizeThemeStyle(State.themeStyle);

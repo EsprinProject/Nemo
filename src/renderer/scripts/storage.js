@@ -912,7 +912,7 @@ function readAiKeyStatus() {
 
 function loadData() {
     ensureStorageDirs();
-    let config = { theme: 'system', themeStyle: 'default', accentColor: '', brandColor: 'brand', cornerRadius: 'default', uiScale: 1, spellcheck: false, uiMode: 'modern', tabsDisabled: false, sidebarCollapsed: false, trashRetentionDays: 0, autoUpdate: true, ghProxyEnabled: false, folders: [], aiActiveChat: '', fonts: {}, ai: {}, voice: {}, syncServer: {} };
+let config = { theme: 'system', themeStyle: 'default', accentColor: '', brandColor: 'brand', cornerRadius: 'default', uiScale: 1, spellcheck: false, uiMode: 'modern', tabsDisabled: false, sidebarCollapsed: false, trashRetentionDays: 0, autoUpdate: true, ghProxyEnabled: false, folders: [], aiActiveChat: '', fonts: {}, ai: {}, voice: {}, syncServer: {} };
 
     // 1. 读取应用配置 config.json（自定义文件夹列表也存在这里）
     try {

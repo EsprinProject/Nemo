@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/EsprinProject/Logos/main/Nemo.png" width="88" height="88" alt="Esprin Nemo">
+
 # Esprin Nemo
 
 > Note, Nothing.
@@ -635,7 +637,7 @@ API Key **不随数据目录保存**，也不写入 `data/config.json`。
 ```text
 ├── package.json            # "main" 指向 src/main/main.js
 ├── assets/
-│   └── icon.png            # 应用图标（窗口 + 构建资源）
+│   └── icon.png            # 应用图标（窗口 + 构建资源，取自 EsprinProject/Logos 的 Main.png）
 ├── src/
 │   ├── main/               # 主进程
 │   │   ├── main.js         # 窗口、菜单、数据目录解析与迁移、IPC

@@ -19,6 +19,17 @@
     flex-shrink: 0;
 }
 
+/* 账户登录：账户名、密码与「登录并生成令牌」排成一行。
+   两格比通用输入框窄（账户名与密码都不长），按钮仍落在控件列的宽度内；
+   窄窗口下按钮折到下一行，不把左侧说明挤成窄条 */
+.sync-login-group {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+.settings-input.sync-login-field {
+    width: 110px;
+}
+
 /* 自定义同步间隔：数值 + 单位（秒 / 分钟） */
 .sync-interval-group {
     display: flex;
@@ -59,4 +70,71 @@
 }
 .sync-status[data-tone='error'] {
     color: var(--danger);
+}
+
+/* ---------------- 团队笔记（共享） ----------------
+   设置页里的两个列表（收到的请求、共享到手与共享出去的笔记）沿用 .settings-row 的卡片观感：
+   与 .secret-list 同一套布局，只是动作按钮可能有两个，因此动作区允许折行 */
+
+.team-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 680px;
+}
+.team-list:empty {
+    display: none;
+}
+.team-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 16px;
+    background: var(--bg-list);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+.team-item-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+.team-item-main .ms-icon {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+}
+.team-item-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+.team-item-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.team-item-meta {
+    font-size: 11.5px;
+    color: var(--text-muted);
+}
+.team-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    flex-shrink: 0;
+}
+.team-empty {
+    padding: 18px 16px;
+    border: 1px dashed var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 12px;
+    color: var(--text-muted);
 }

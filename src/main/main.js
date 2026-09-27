@@ -234,7 +234,7 @@ configureScratchpadWindow({
 configureAiService({ getDataDir: resolveDataDir });
 
 /* 自建同步（操作日志模型，服务端见 server/sync.py）：
-   服务器地址与设备名取自 config.json，访问令牌由系统密钥链单独保管；
+   服务器地址、账户名与设备名取自 config.json，访问令牌由系统密钥链单独保管；
    拉取到的操作会直接改动本地文件，因此改完之后要告知主窗口重新载入数据 */
 configureSyncServer({
   getDataDir: resolveDataDir,

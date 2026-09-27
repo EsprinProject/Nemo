@@ -9,12 +9,18 @@ function contextMenuItems(item) {
     const label = itemKindLabel(item);
 
     if (item.isTrashed) {
-        return [
+        const items = [
             { action: 'open', icon: 'open_in_new', label: '在标签页打开' },
             { action: 'restore', icon: 'restore_from_trash', label: `恢复${label}` },
-            { action: 'export', icon: 'file_download', label: '导出 Markdown' },
-            { action: 'purge', icon: 'delete_forever', label: '彻底删除', danger: true }
+            { action: 'export', icon: 'file_download', label: '导出 Markdown' }
         ];
+        // 共享过来的笔记属于所有者：删除要经「退出共享」，不给彻底删除
+        if (isSharedItem(item)) {
+            items.push({ action: 'leave-share', icon: 'link_off', label: '退出共享', danger: true });
+        } else {
+            items.push({ action: 'purge', icon: 'delete_forever', label: '彻底删除', danger: true });
+        }
+        return items;
     }
 
     const items = [
@@ -30,12 +36,23 @@ function contextMenuItems(item) {
         });
     }
 
+    items.push({
+        action: 'pin',
+        icon: item.isPinned ? 'keep_off' : 'push_pin',
+        label: item.isPinned ? '取消置顶' : `置顶${label}`
+    });
+
+    /* 共享过来的笔记：隐藏、密码与废纸篓都会连带改到所有者那一篇（或本就删不掉），
+       因此只给「打开 / 置顶 / 导出 / 退出共享」这一组动作 */
+    if (isSharedItem(item)) {
+        items.push(
+            { action: 'export', icon: 'file_download', label: '导出 Markdown' },
+            { action: 'leave-share', icon: 'link_off', label: '退出共享', danger: true }
+        );
+        return items;
+    }
+
     items.push(
-        {
-            action: 'pin',
-            icon: item.isPinned ? 'keep_off' : 'push_pin',
-            label: item.isPinned ? '取消置顶' : `置顶${label}`
-        },
         /* 秘密本：隐藏与密码。隐藏后条目不再出现在任何列表里，只能去「设置 → 秘密本」找回，
            因此这里给出的入口在隐藏后仍然留着一个「取消隐藏」的提示（列表右键菜单虽已看不到它） */
         {
@@ -53,6 +70,12 @@ function contextMenuItems(item) {
     // 已解锁的加密条目：再给一个马上重新上锁的入口（关闭应用同样会失去内存里的密钥）
     if (item.locked === true && item.unlocked === true) {
         items.push({ action: 'lock-now', icon: 'lock', label: '立即锁定' });
+    }
+
+    /* 团队笔记：只对笔记开放，且先同步到服务端才共享得出去（见 scripts/team_notes.js）。
+       加密条目共享出去的是密文，隐藏条目本就不在列表里，因此这两种不给入口 */
+    if (!isTodoItem(item) && !isSecretItem(item)) {
+        items.push({ action: 'share', icon: 'share', label: '共享…' });
     }
 
     items.push(
@@ -120,6 +143,10 @@ document.getElementById('note-context-menu').onclick = (e) => {
         removeItemPassword(contextItemId);
     } else if (action === 'lock-now') {
         lockItemNow(contextItemId);
+    } else if (action === 'share') {
+        shareNoteFromMenu(contextItemId);
+    } else if (action === 'leave-share') {
+        leaveSharedNoteFromMenu(contextItemId);
     } else if (action === 'export') {
         exportItemMarkdown(contextItemId);
     } else if (action === 'delete') {

@@ -102,6 +102,8 @@ window.onload = () => {
     refreshDataDirInfo();
     initSyncServerSettings();
     initJournalFileSettings();
+    // 团队笔记：设置页里的共享请求与共享列表
+    initTeamNotesSettings();
     // 秘密本：设置页里隐藏与加密条目的刷新入口
     initSecretSettings();
     initUpdateSettings();

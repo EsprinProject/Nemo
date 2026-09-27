@@ -252,6 +252,18 @@ function itemKindLabel(item) {
     return isTodoItem(item) ? '待办' : '笔记';
 }
 
+/* 是否为「别人共享过来的」笔记（见 storage.js 的共享笔记一节）。
+   这类条目的正文归所有者所有，接收方改的是同一篇，因此隐藏、密码、废纸篓、彻底删除
+   这些会连带改到所有者那边（或本就删不掉）的动作一律不做，改为「退出共享」。 */
+function isSharedItem(item) {
+    return !!(item && item.shared && item.shared.owner && item.shared.noteId);
+}
+
+// 共享来源（所有者的账户 id），非共享条目返回空串
+function sharedItemOwner(item) {
+    return isSharedItem(item) ? String(item.shared.owner) : '';
+}
+
 // 没有标题时的兜底名称
 function itemDisplayTitle(item) {
     return item.title || `未命名${itemKindLabel(item)}`;
@@ -334,6 +346,11 @@ function togglePin(itemId) {
 function moveToTrash(itemId) {
     const item = getItemById(itemId);
     if (!item || item.isTrashed) return;
+    // 共享笔记是所有者那一篇：移进废纸篓等于替对方把它丢掉，接收方只能退出共享
+    if (isSharedItem(item)) {
+        showToast('共享笔记不能移入废纸篓：可在右键菜单里「退出共享」');
+        return;
+    }
     item.isTrashed = true;
     closeTab(itemId);
     saveItem(item);
@@ -376,6 +393,11 @@ async function exportItemMarkdown(itemId) {
 async function purgeItem(itemId) {
     const item = getItemById(itemId);
     if (!item) return;
+    // 共享过来的笔记删不掉：它属于所有者，接收方只能退出共享（服务端同样拒收这种删除）
+    if (isSharedItem(item)) {
+        showToast('共享笔记不能彻底删除：可在右键菜单里「退出共享」');
+        return;
+    }
     const label = itemKindLabel(item);
     const confirmed = await showConfirm(`彻底删除“${itemDisplayTitle(item)}”？`, {
         title: `彻底删除${label}`,
@@ -410,8 +432,9 @@ async function clearTrash() {
         danger: true
     });
     if (!confirmed) return;
-    State.notes.filter(n => n.isTrashed).forEach(n => deleteNoteFile(n.id));
-    State.notes = State.notes.filter(n => !n.isTrashed);
+    // 共享过来的笔记不随废纸篓一起清掉：它属于所有者，只有「退出共享」才能让它离开
+    State.notes.filter(n => n.isTrashed && !isSharedItem(n)).forEach(n => deleteNoteFile(n.id));
+    State.notes = State.notes.filter(n => !n.isTrashed || isSharedItem(n));
     State.todos.filter(t => t.isTrashed).forEach(t => deleteTodoFile(t.id));
     State.todos = State.todos.filter(t => !t.isTrashed);
     renderApp();
@@ -488,7 +511,8 @@ function purgeExpiredTrashItems() {
     if (!days) return 0;
 
     const cutoff = Date.now() - days * TRASH_RETENTION_DAY_MS;
-    const isExpired = (item) => item.isTrashed && (item.updatedAt || 0) < cutoff;
+    // 共享过来的笔记（属于所有者）不参与自动清理：它在废纸篓里只是对方把它丢掉了
+    const isExpired = (item) => item.isTrashed && !isSharedItem(item) && (item.updatedAt || 0) < cutoff;
     const expiredNotes = State.notes.filter(isExpired);
     const expiredTodos = State.todos.filter(isExpired);
     if (!expiredNotes.length && !expiredTodos.length) return 0;

@@ -965,7 +965,7 @@ function renderListPanel() {
     // 签名里用列表实际展示的时间（分钟精度）与完成状态：顺序或完成状态变化会重建整列列表，
     // 而“编辑正文但展示时间未变”这类提交不会触发整树重建
     const signature = `${State.currentFilter}\u0001${State.searchQuery}\u0002${State.sortBy}\u0003${State.activeNoteId}\u0004`
-        + list.map(item => `${item.id}\u0005${isTodoItem(item) ? 1 : 0}\u0005${item.title || ''}\u0005${formatDate(item.updatedAt)}\u0005${item.folder}\u0005${item.isPinned ? 1 : 0}\u0005${item.isDone ? 1 : 0}\u0005${notePreviewText(item)}`).join('\u0006');
+        + list.map(item => `${item.id}\u0005${isTodoItem(item) ? 1 : 0}\u0005${isSharedItem(item) ? 1 : 0}\u0005${item.title || ''}\u0005${formatDate(item.updatedAt)}\u0005${item.folder}\u0005${item.isPinned ? 1 : 0}\u0005${item.isDone ? 1 : 0}\u0005${notePreviewText(item)}`).join('\u0006');
     if (renderSignatures.list === signature) return;
     renderSignatures.list = signature;
 
@@ -1020,6 +1020,7 @@ function createNoteCard(note) {
     card.innerHTML = `
         <div class="note-card-title">
             <span>${escapeHTML(note.title || '未命名笔记')}</span>
+            ${isSharedItem(note) ? `<span class="ms-icon xs" title="来自账户 ${escapeHTML(note.shared.owner)} 的共享笔记">group</span>` : ''}
             ${note.locked === true ? `<span class="ms-icon xs fill" style="color: var(--accent);">${note.unlocked === true ? 'lock_open' : 'lock'}</span>` : ''}
             ${note.isPinned ? '<span class="ms-icon xs fill" style="color: var(--accent);">push_pin</span>' : ''}
         </div>
@@ -1078,6 +1079,9 @@ function renderWorkspace() {
         syncAccentControls();
         syncAiSettingsUI();
         syncSyncServerSettingsUI();
+        // 团队笔记：共享请求与共享关系都存在服务端，进设置页时顺手读一次
+        // （短时间内的重复渲染按现有数据重画，不重复请求）
+        if (typeof refreshTeamNotesSoon === 'function') refreshTeamNotesSoon();
         syncUiModeUI();
         syncUpdateSettingsUI();
         applyAiPanelVisibility();

@@ -1,4 +1,4 @@
-/* 自建同步（设置 → 数据与存储）：服务器地址、设备名、访问令牌与自动同步节奏。
+/* 自建同步（设置 → 数据与存储）：服务器地址、账户登录、设备名、访问令牌与自动同步节奏。
 
    同步本身在主进程完成（见 src/main/sync_server.js），采用操作日志模型：
    本地每次保存/删除都变成一条操作推给服务端，服务端给每条操作分配序号并写进 append-only 日志；
@@ -9,6 +9,8 @@
 // 输入过程中攒一下再落盘，避免每敲一个字符就写一次 config.json
 const SYNC_CONFIG_SAVE_DELAY = 400;
 let syncConfigSaveTimer = null;
+// 服务端要求账户密码至少 8 位（见 sync.py 的 MIN_PASSWORD_LENGTH）
+const SYNC_PASSWORD_MIN = 8;
 // 同步进行中：按钮统一置灰
 let syncBusy = false;
 // 最近一次从主进程取回的同步状态（状态行与描述都要用）
@@ -112,7 +114,7 @@ function formatSyncTime(stamp) {
 function describeSyncState() {
     const config = syncConfig();
     if (!config.url) {
-        return '尚未配置：填写服务器地址与访问令牌后即可同步。';
+        return '尚未配置：填写服务器地址，再用「账户登录」生成令牌（或在服务端管理页创建令牌后填入）即可同步。';
     }
 
     const device = config.device ? `，设备名 ${config.device}` : '';
@@ -132,6 +134,8 @@ function applySyncStatus(status) {
     syncServerStatus = status;
     State.syncTokenSaved = !!status.hasToken;
     applySyncDeviceId(status);
+    // 令牌的有无决定了「账户登录」那一行的提示（是否已登录、令牌是否已保存）
+    applySyncLoginHint();
 
     if (status.lastError) setSyncStatus(`同步失败：${status.lastError}`, 'error');
     else setSyncStatus(describeSyncState());
@@ -276,13 +280,15 @@ function applySyncTokenStatus(status) {
     const hint = document.getElementById('sync-token-hint');
     if (hint) {
         if (!State.syncTokenSaved) {
-            hint.textContent = '尚未保存令牌：服务端一律要求凭据，先在服务端管理页创建访问令牌再填入（服务器地址 + /admin）。';
+            hint.textContent = '尚未保存令牌：可用上方的「账户登录」生成一个，或在服务端管理页（服务器地址 + /admin）创建后填入。';
         } else if (State.syncTokenStrong) {
             hint.textContent = '已保存到系统密钥链（内存与磁盘上均为密文）。';
         } else {
             hint.textContent = '已保存：当前系统未提供密钥链，仅按本机可读的文件权限保存。';
         }
     }
+
+    applySyncLoginHint();
 }
 
 async function refreshSyncTokenStatus() {
@@ -343,6 +349,91 @@ async function clearSyncToken() {
     }
 }
 
+/* ---------------- 账户登录：账户名 + 密码换访问令牌 ----------------
+
+   桌面客户端持不住服务端的登录 Cookie，因此服务端另开了一个口子：
+   提交账户名与密码，由服务端为该账户签发一份访问令牌（见 sync.py 的 /admin/api/tokens/generate）。
+   密码只经主进程发一次请求，不落盘也不回显；拿到的令牌与手动填写走同一条路（系统密钥链）。 */
+
+function setSyncLoginHint(text) {
+    const hint = document.getElementById('sync-login-hint');
+    if (hint) hint.textContent = text;
+}
+
+function describeSyncLoginState() {
+    const account = syncConfig().account;
+    const who = account ? `上次登录的账户「${account}」` : '尚未登录';
+    if (!State.syncTokenSaved) return `${who}：填写账户名与密码后点「登录并生成令牌」`;
+    return `${who}；令牌已保存，重新登录会为该账户再签发一个令牌`;
+}
+
+function applySyncLoginHint() {
+    setSyncLoginHint(describeSyncLoginState());
+}
+
+async function loginSyncAccount() {
+    if (syncBusy) return;
+    readSyncConfigFromForm();
+    const config = syncConfig();
+    if (!config.url) {
+        setSyncStatus('请先填写服务器地址', 'error');
+        return;
+    }
+
+    const passwordInput = document.getElementById('setting-sync-password');
+    const password = passwordInput ? passwordInput.value : '';
+    if (!password) {
+        setSyncLoginHint('请填写账户密码');
+        return;
+    }
+    if (password.length < SYNC_PASSWORD_MIN) {
+        setSyncLoginHint(`密码至少 ${SYNC_PASSWORD_MIN} 位`);
+        return;
+    }
+
+    // 每次登录都会让服务端再签发一个令牌：已经能用的时候先确认一次，免得白白攒下一堆旧令牌
+    if (State.syncTokenSaved) {
+        const confirmed = await showConfirm('当前已保存访问令牌，仍要重新登录？', {
+            title: '账户登录',
+            detail: '服务端会为该账户再签发一个访问令牌，本机随即改用新的那个；旧令牌不会因此失效，'
+                + '如不再需要可在服务端管理页（服务器地址 + /admin）里删除。',
+            confirmLabel: '登录'
+        });
+        if (!confirmed) return;
+    }
+
+    ensureSyncEnabled();
+    flushSyncConfigSave();
+
+    setSyncBusy(true);
+    setSyncStatus('正在登录并生成访问令牌…');
+    try {
+        const result = await ipcRenderer.invoke('sync:login', {
+            account: config.account,
+            password,
+            // 令牌名与绑定设备：服务端日志据此认出改动来自哪一台设备
+            tokenName: config.device ? `Esprin Nemo · ${config.device}` : 'Esprin Nemo'
+        });
+        if (!result || !result.ok) {
+            setSyncStatus(`登录失败：${(result && result.error) || '与主进程通信异常，请重试'}`, 'error');
+            return;
+        }
+
+        if (passwordInput) passwordInput.value = '';
+        applySyncTokenStatus(result);
+        await syncSyncAutoSetting();
+        await refreshSyncStatus();
+        const name = result.user && result.user.name ? result.user.name : (config.account || '内置账户');
+        setSyncStatus(`已登录账户「${name}」，访问令牌已生成并保存；若该账户在服务端还没有数据，可接着点「首次接入」。`, 'ok');
+        showToast('已登录并保存访问令牌');
+    } catch (err) {
+        console.error('账户登录失败:', err);
+        setSyncStatus('登录失败：与主进程通信异常，请重试', 'error');
+    } finally {
+        setSyncBusy(false);
+    }
+}
+
 /* ---------------- 配置与界面 ---------------- */
 
 function readSyncConfigFromForm() {
@@ -355,6 +446,7 @@ function readSyncConfigFromForm() {
         // 保留上次同步的时刻与结果（表单里没有这两项）
         ...State.syncServer,
         url: field('setting-sync-url'),
+        account: field('setting-sync-account'),
         device: field('setting-sync-device'),
         autoSync: readSyncAutoSelection(),
         autoSyncSeconds: readSyncAutoSecondsFromForm()
@@ -370,6 +462,8 @@ function syncSyncServerSettingsUI() {
     State.syncServer = config;
 
     urlInput.value = config.url;
+    const accountInput = document.getElementById('setting-sync-account');
+    if (accountInput) accountInput.value = config.account;
     document.getElementById('setting-sync-device').value = config.device;
     document.getElementById('setting-sync-enabled').checked = config.enabled === true;
 
@@ -385,6 +479,10 @@ function syncSyncServerSettingsUI() {
     }
     const tokenToggle = document.getElementById('btn-sync-token-toggle');
     if (tokenToggle) tokenToggle.innerHTML = '<span class="ms-icon xs">visibility</span>';
+
+    // 密码同理：只在登录那一次输入，从不留在界面上
+    const passwordInput = document.getElementById('setting-sync-password');
+    if (passwordInput) passwordInput.value = '';
 
     applySyncTokenStatus({ hasToken: State.syncTokenSaved, strong: State.syncTokenStrong });
     applySyncEnabledState();
@@ -426,7 +524,7 @@ function ensureSyncEnabled() {
 
 function setSyncBusy(busy) {
     syncBusy = busy;
-    ['btn-sync-test', 'btn-sync-now', 'btn-sync-import', 'btn-sync-diagnose'].forEach((id) => {
+    ['btn-sync-test', 'btn-sync-now', 'btn-sync-import', 'btn-sync-diagnose', 'btn-sync-login'].forEach((id) => {
         const btn = document.getElementById(id);
         if (btn) btn.disabled = busy;
     });
@@ -588,7 +686,7 @@ function initSyncServerSettings() {
     if (!urlInput) return;
 
     // 文本类字段：输入时只更新内存并稍后落盘，失焦/回车时立即落盘
-    ['setting-sync-url', 'setting-sync-device'].forEach((id) => {
+    ['setting-sync-url', 'setting-sync-account', 'setting-sync-device'].forEach((id) => {
         const el = document.getElementById(id);
         if (!el) return;
         el.oninput = () => {
@@ -650,6 +748,19 @@ function initSyncServerSettings() {
     const enabledToggle = document.getElementById('setting-sync-enabled');
     if (enabledToggle) enabledToggle.onchange = (event) => toggleSyncEnabled(event.target.checked);
 
+    // 账户登录：回车即提交（密码框不会把内容留在界面上，失败时原地再试）
+    const passwordInput = document.getElementById('setting-sync-password');
+    if (passwordInput) {
+        passwordInput.onkeydown = (event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            loginSyncAccount();
+        };
+    }
+
+    const loginBtn = document.getElementById('btn-sync-login');
+    if (loginBtn) loginBtn.onclick = loginSyncAccount;
+
     const testBtn = document.getElementById('btn-sync-test');
     if (testBtn) testBtn.onclick = testSyncConnection;
 
@@ -677,11 +788,19 @@ function initSyncServerSettings() {
         adoptDataDir(DATA_DIR, { message: payload.summary || `已从服务器同步 ${payload.count} 处改动` });
         refreshSyncStatus();
         refillRecycledIds().catch(() => {});
+        // 团队笔记的共享状态也写在服务端：同步下来的改动可能带来新的请求或撤销
+        if (typeof refreshTeamNotesSoon === 'function') refreshTeamNotesSoon();
     });
 
     /* 本地改动推上去之后：这一批里可能有删除（它的 ID 进了服务端的回收池），顺手补一批 */
     ipcRenderer.on('sync:pushed', () => {
         refillRecycledIds().catch(() => {});
+    });
+
+    /* 每轮同步结束：共享关系存在服务端，别人新发来的共享请求不会带来本地文件改动，
+       只有在这里对一次共享列表，新的请求才会浮现并提示（见 scripts/team_notes.js） */
+    ipcRenderer.on('sync:complete', () => {
+        if (typeof refreshTeamNotesSoon === 'function') refreshTeamNotesSoon();
     });
 
     syncSyncServerSettingsUI();

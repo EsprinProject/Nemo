@@ -29,6 +29,8 @@ const REQUEST_TIMEOUT_MS = 15000;
 const PUSH_TIMEOUT_MS = 60000;
 // 服务端的同步接口前缀：所有同步请求都挂在它下面（管理页在 /admin，与此无关）
 const SYNC_PATH = '/sync';
+// 管理接口前缀：账户登录换取访问令牌走这里（见 loginWithAccount）
+const ADMIN_API_PATH = '/admin/api';
 // 一次拉取多少条、一次推送多少条
 const PAGE_LIMIT = 500;
 const MAX_OPS_PER_PUSH = 200;
@@ -122,7 +124,7 @@ function autoSyncIntervalMs(config) {
 function validateConfig(config) {
   if (!config.enabled) return { error: '自建同步尚未启用，请先在「设置 → 数据与存储」中打开' };
   if (!config.url) return { error: '请先填写同步服务器地址（以 http:// 或 https:// 开头）' };
-  if (!store.status().hasKey) return { error: '请先填写访问令牌（在服务端管理页创建：服务器地址 + /admin）' };
+  if (!store.status().hasKey) return { error: '请先填写访问令牌（在设置页用「账户登录」生成，或在服务端管理页创建：服务器地址 + /admin）' };
   return {};
 }
 
@@ -405,6 +407,49 @@ async function apiRequest(method, pathname, { body, timeoutMs = REQUEST_TIMEOUT_
   }
 }
 
+/* ---------------- 账户登录：密码换访问令牌 ----------------
+
+   桌面客户端没法持有服务端的登录 Cookie，因此服务端另开了一个口子：
+   提交账户名与密码，由服务端为该账户签发一份访问令牌（见 sync.py 的 /admin/api/tokens/generate）。
+   密码只出现在这一次请求里：不写配置、不写日志、不回传渲染进程；
+   拿到令牌后立即交给系统密钥链，此后所有请求仍只用令牌。 */
+async function loginWithAccount({ account, password, tokenName } = {}) {
+  const config = readSyncConfig();
+  if (!config.url) return { ok: false, error: '请先填写同步服务器地址（以 http:// 或 https:// 开头）' };
+
+  const name = String(account == null ? '' : account).trim();
+  const secret = String(password == null ? '' : password);
+  if (!secret) return { ok: false, error: '请填写账户密码' };
+
+  const result = await apiRequest('POST', `${ADMIN_API_PATH}/tokens/generate`, {
+    body: {
+      name,
+      password: secret,
+      // 令牌名与绑定设备：服务端日志据此认出改动来自哪一台设备
+      tokenName: tokenName || 'Esprin Nemo',
+      device: currentState().deviceId
+    }
+  });
+  if (!result.ok) return { ok: false, status: result.status, error: result.error };
+
+  const token = result.data && typeof result.data.token === 'string' ? result.data.token.trim() : '';
+  if (!token) return { ok: false, error: '服务器没有返回令牌，请确认地址指向 EsprinSync 且版本一致' };
+
+  const saved = store.write(token);
+  if (!saved.ok) return saved;
+
+  // 上一次失败多是因为缺令牌：令牌补上了，这条旧错误不该继续挂在状态行上
+  lastError = '';
+  return {
+    ok: true,
+    user: result.data.user || null,
+    tokenId: result.data.id || '',
+    hasToken: true,
+    strong: store.status().strong,
+    encrypted: store.status().encrypted
+  };
+}
+
 /* ---------------- 推送（本地 → 服务端） ---------------- */
 
 // 本地落盘/删除后排队：合并同一路径的连续改动，攒一小会儿一起推
@@ -505,6 +550,62 @@ async function claimRecycledIds({ count = RECYCLE_CLAIM_COUNT, kind = '' } = {})
     ids: Array.isArray(result.data.ids) ? result.data.ids : [],
     // 池子里还有，只是本机的序号还没跟上：先同步一次再来领
     pending: Number(result.data.pending) || 0
+  };
+}
+
+/* ---------------- 团队笔记（共享笔记） ----------------
+
+   共享记录放在服务端：谁把哪一篇共享给了谁、对方同意了没有。接收方拿到的是同一篇内容
+   在自己那份日志里的投影（路径为 shared/<所有者 id>/<条目 id>.md），因此它看起来、
+   用起来都是一篇普通笔记；写回去的操作由服务端改写路径落进所有者的日志，两人看到的始终是同一篇。
+   同意 / 撤销 / 退出之后都追一次同步：投影那条操作要么拉下来、要么把本地那份删掉。 */
+
+async function listShares() {
+  const checked = validateConfig(readSyncConfig());
+  if (checked.error) return { ok: false, error: checked.error };
+
+  const result = await apiRequest('GET', `${SYNC_PATH}/shares`, { timeoutMs: 8000 });
+  if (!result.ok) return { ok: false, status: result.status, error: result.error };
+  return { ok: true, ...result.data };
+}
+
+async function requestShare(payload = {}) {
+  const checked = validateConfig(readSyncConfig());
+  if (checked.error) return { ok: false, error: checked.error };
+
+  const relative = normalizeRelative(payload.path);
+  if (!relative) return { ok: false, error: '这篇笔记还没有归属，无法共享' };
+  const target = String(payload.target == null ? '' : payload.target).trim();
+  if (!target) return { ok: false, error: '请填写对方的用户 ID' };
+
+  const result = await apiRequest('POST', `${SYNC_PATH}/shares/request`, {
+    body: { path: relative, target }
+  });
+  if (!result.ok) return { ok: false, status: result.status, error: result.error };
+  return { ok: true, share: result.data.share || null };
+}
+
+// 同意 / 拒绝 / 撤销 / 退出共用一条路径：请求成功后立刻同步一次，让投影落地（或被删掉）
+async function shareAction(pathname, payload = {}) {
+  const checked = validateConfig(readSyncConfig());
+  if (checked.error) return { ok: false, error: checked.error };
+
+  const id = String(payload.id == null ? '' : payload.id).trim();
+  if (!id) return { ok: false, error: '缺少共享记录标识' };
+
+  const body = { id };
+  if (pathname.endsWith('/respond')) body.accept = payload.accept !== false;
+
+  const result = await apiRequest('POST', `${SYNC_PATH}${pathname}`, { body });
+  if (!result.ok) return { ok: false, status: result.status, error: result.error };
+
+  const synced = await syncNow({ reason: '团队笔记' });
+  return {
+    ok: true,
+    status: result.data.status || '',
+    shared: result.data.share || null,
+    synced: synced && synced.ok ? synced : null,
+    syncError: synced && !synced.ok ? synced.error : ''
   };
 }
 
@@ -997,6 +1098,9 @@ async function syncNow({ full = false, reason = '手动' } = {}) {
         applied: changed.slice(0, 20)
       });
     }
+    /* 每轮同步都报一次「跑完了」：共享关系存在服务端，别人新发来的共享请求不会带来任何
+       本地文件改动，界面只有在这一刻才可能察觉（见渲染进程的 sync:complete）。 */
+    sendToRenderer('sync:complete', { summary, lastSeq: state.lastSeq, changed: changed.length });
 
     return {
       ok: true,
@@ -1301,6 +1405,9 @@ function registerSyncIpc() {
       : result;
   });
 
+  // 账户登录：账户名 + 密码换一份访问令牌并直接存进密钥链（密码不落盘，也不回传渲染进程）
+  ipcMain.handle('sync:login', (event, payload) => loginWithAccount(payload || {}));
+
   // 测试连接：健康检查不需要令牌，用它区分「地址不对」与「令牌不对」
   ipcMain.handle('sync:test', async () => {
     const config = readSyncConfig();
@@ -1314,7 +1421,7 @@ function registerSyncIpc() {
       return {
         ok: false,
         error: stateResult.status === 401
-          ? '能连上服务器，但需要访问令牌：请在下面填写令牌后重试'
+          ? '能连上服务器，但需要访问令牌：可在设置页用「账户登录」生成，或在下面填写令牌后重试'
           : stateResult.error
       };
     }
@@ -1337,6 +1444,13 @@ function registerSyncIpc() {
 
   // 首次接入：先把服务端日志重放到本地，再把本地独有的文件推上去
   ipcMain.handle('sync:import-local', (event) => importLocal({ sender: event.sender }));
+
+  // 团队笔记：共享列表与四个动作（邀请 / 同意拒绝 / 撤销 / 退出）
+  ipcMain.handle('sync:shares', () => listShares());
+  ipcMain.handle('sync:share-request', (event, payload) => requestShare(payload || {}));
+  ipcMain.handle('sync:share-respond', (event, payload) => shareAction('/shares/respond', payload || {}));
+  ipcMain.handle('sync:share-revoke', (event, payload) => shareAction('/shares/revoke', payload || {}));
+  ipcMain.handle('sync:share-leave', (event, payload) => shareAction('/shares/leave', payload || {}));
 
   // 设置变更（地址、令牌、间隔、开关）后重建定时器
   ipcMain.handle('sync:apply-auto-sync', () => {

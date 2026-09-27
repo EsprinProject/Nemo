@@ -1,13 +1,17 @@
 /* 数据持久化：数据目录，以及 config.json / notes/{id}.md / todos/{id}.md / ai_chats/{id}.json 的读写。
    笔记与待办的标题、文件夹、标签、置顶与废纸篓状态、创建/修改时间都以内嵌注释（EsprinData）写在
    各自 .md 文件开头（待办仅多一行 isDone 完成状态，文件格式与笔记完全一致）；
-   AI 对话同样一份对话一个文件。三者都不再有独立的索引文件。 */
+   AI 对话同样一份对话一个文件。三者都不再有独立的索引文件。
+
+   团队笔记（共享笔记）另有一个 shared/ 子目录：别人共享过来的笔记落在 shared/<所有者 id>/ 下，
+   与服务端那条投影路径一一对应，格式与本地笔记完全相同（见文件末尾的共享笔记一节）。 */
 
 // 数据目录可在设置页中更改，因此路径均为可变变量（切换位置后就地生效，无需重启）
 let DATA_DIR = resolveDataDir();
 let NOTES_DIR = path.join(DATA_DIR, 'notes');
 let TODOS_DIR = path.join(DATA_DIR, 'todos');
 let AI_CHATS_DIR = path.join(DATA_DIR, 'ai_chats');
+let SHARED_DIR = path.join(DATA_DIR, 'shared');
 let CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 // 旧版单文件记录：仅在启动时读一次用于迁移，完成后归档为同名 .bak
 let LEGACY_INDEX_FILE = path.join(DATA_DIR, 'index.json');
@@ -32,6 +36,7 @@ function setDataPaths(dir) {
     NOTES_DIR = path.join(dir, 'notes');
     TODOS_DIR = path.join(dir, 'todos');
     AI_CHATS_DIR = path.join(dir, 'ai_chats');
+    SHARED_DIR = path.join(dir, 'shared');
     CONFIG_FILE = path.join(dir, 'config.json');
     LEGACY_INDEX_FILE = path.join(dir, 'index.json');
     LEGACY_AI_CHATS_FILE = path.join(dir, 'ai_chats.json');
@@ -441,6 +446,102 @@ function buildNoteFromFile(file, legacy) {
         updatedAt: readNoteMetaNumber(meta.updatedAt, readNoteMetaNumber(fallback.updatedAt, Math.max(createdAt, statTime))),
         content: file.content
     };
+}
+
+/* ---------------- 团队笔记（共享笔记） ----------------
+
+   别人共享过来的笔记落在 shared/<所有者 id>/<条目 id>.md：每份文件对应服务端日志里
+   一条同名的投影操作，内容与所有者那份始终一致（见 src/main/sync_server.js 的共享一节）。
+   条目 id 带 shared: 前缀，与本地随机 id 各成一套，不会撞上；写回去的改动与服务端那条
+   投影路径同名，服务端据此改写路径落进所有者的日志。 */
+
+// 共享笔记的客户端条目 id：shared:<所有者 id>:<条目 id>
+function sharedItemId(owner, noteId) {
+    return `shared:${owner}:${noteId}`;
+}
+
+// 客户端条目 id → 共享来源；不是共享笔记时返回 null
+function parseSharedItemId(itemId) {
+    const matched = /^shared:([A-Za-z0-9_-]{1,64}):([A-Za-z0-9_-]{1,64})$/.exec(String(itemId || ''));
+    return matched ? { owner: matched[1], noteId: matched[2] } : null;
+}
+
+function sharedItemPath(owner, noteId) {
+    return path.join(SHARED_DIR, owner, `${noteId}.md`);
+}
+
+// 所有者 id 会当目录名用，只接受服务端允许的字符（与服务端的路径规则一致）
+const SHARED_OWNER_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+// 扫描 shared/ 下各所有者的目录，逐份读出原始文本并解析内嵌元数据
+function readSharedNoteFiles() {
+    const files = [];
+    let skipped = 0;
+
+    let owners = [];
+    try {
+        owners = fs.readdirSync(SHARED_DIR, { withFileTypes: true });
+    } catch (err) {
+        // 还没有共享过：shared/ 不存在，这不是异常
+        return { files, skipped };
+    }
+
+    owners.forEach((ownerEntry) => {
+        if (!ownerEntry.isDirectory() || !SHARED_OWNER_PATTERN.test(ownerEntry.name)) return;
+        const ownerDir = path.join(SHARED_DIR, ownerEntry.name);
+
+        let entries = [];
+        try {
+            entries = fs.readdirSync(ownerDir, { withFileTypes: true });
+        } catch (err) {
+            return;
+        }
+
+        entries.forEach((entry) => {
+            if (!entry.isFile() || isStaleTempFile(entry.name)) return;
+            const matched = entry.name.match(NOTE_FILE_PATTERN);
+            if (!matched) {
+                skipped++;
+                return;
+            }
+            try {
+                const filePath = path.join(ownerDir, entry.name);
+                const stat = fs.statSync(filePath);
+                const raw = fs.readFileSync(filePath, 'utf8');
+                const parsed = parseNoteFile(raw);
+                files.push({
+                    id: matched[1],
+                    owner: ownerEntry.name,
+                    raw,
+                    stat,
+                    hasMeta: !!parsed.meta,
+                    meta: parsed.meta || {},
+                    content: parsed.content
+                });
+            } catch (err) {
+                console.error(`读取共享笔记 ${entry.name} 失败:`, err);
+                skipped++;
+            }
+        });
+    });
+
+    return { files, skipped };
+}
+
+/* 拼出一份共享笔记：元数据与正文用与本地笔记完全相同的读法，只多记一条来源。
+   文件夹照原样保留——本地没有这个文件夹也不回退到「默认」，否则每次载入都会把它改写一遍，
+   等于替所有者改了笔记。 */
+function buildSharedNoteFromFile(file) {
+    const note = buildNoteFromFile(file, null);
+    note.id = sharedItemId(file.owner, file.id);
+    note.shared = { owner: file.owner, noteId: file.id };
+    return note;
+}
+
+// 笔记文件的位置：共享过来的在 shared/<所有者 id>/ 下，其余在 notes/ 下
+function noteFilePath(note) {
+    if (note.shared) return sharedItemPath(note.shared.owner, note.shared.noteId);
+    return path.join(NOTES_DIR, `${note.id}.md`);
 }
 
 // 拼出一份完整的待办：文件格式与笔记一致，仅多一个 isDone 完成状态
@@ -869,6 +970,8 @@ function normalizeSyncServerConfig(raw) {
         // 总开关：默认关闭，填好地址后再由用户打开
         enabled: source.enabled === true,
         url: pick('url').replace(/\/+$/, ''),
+        // 上次登录用的账户名：只用于预填登录表单；密码与令牌都不会落盘
+        account: pick('account'),
         // 设备名：只用于在日志里分辨是哪台机器改的
         device: pick('device'),
         // 自动同步：off / 5s / 1m / 5m / custom（off 只是不定时，启动时仍会同步一次）
@@ -957,6 +1060,11 @@ let config = { theme: 'system', themeStyle: 'default', accentColor: '', brandCol
     const scannedTodos = readTodoFiles();
     const todos = scannedTodos.files.map(file => buildTodoFromFile(file));
 
+    // 4b. 共享笔记：别人共享过来的内容，与服务端的投影路径一一对应
+    const scannedShared = readSharedNoteFiles();
+    const sharedNotes = scannedShared.files.map(file => buildSharedNoteFromFile(file));
+    const allNotes = notes.concat(sharedNotes);
+
     // 5. 文件夹列表 = config.json 中记录的 + 各笔记/待办实际用到的 + 旧索引里出现过的
     const customFolders = [];
     const addFolder = (name) => {
@@ -968,6 +1076,8 @@ let config = { theme: 'system', themeStyle: 'default', accentColor: '', brandCol
     normalizeCustomFolders(legacyIndex.folders).forEach(addFolder);
     notes.forEach(note => addFolder(note.folder));
     todos.forEach(todo => addFolder(todo.folder));
+    // 共享笔记用到的文件夹同样列进侧边栏，它落在这个文件夹下才有地方可寻
+    sharedNotes.forEach(note => addFolder(note.folder));
 
     // 6. 文件夹落到实际存在的名字上（与旧行为一致：已不存在的文件夹回退到“默认”）
     notes.forEach((note) => {
@@ -1022,9 +1132,13 @@ let config = { theme: 'system', themeStyle: 'default', accentColor: '', brandCol
     resetWriteCache();
     notes.forEach(note => savedNoteFiles.set(note.id, serialized.get(note.id)));
     todos.forEach(todo => savedTodoFiles.set(todo.id, serializedTodos.get(todo.id)));
+    /* 共享笔记不参与上面的「与磁盘逐字节比对后写回」：那份文件的格式该由所有者那边的客户端
+       去修正，接收方照原样读出来就好（写回等于替所有者改笔记，还会平白推一条操作）。
+       缓存按规范化后的内容填：格式脏的数据也不会在接收方这边被改写。 */
+    sharedNotes.forEach(note => savedNoteFiles.set(note.id, serializeNoteFile(note)));
 
     // 最近修改的排在前面，与列表默认排序一致
-    notes.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    allNotes.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     todos.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
     // 10. 载入 AI 对话记录：一份对话一个文件，当前选中的对话记在 config.json 里
@@ -1062,13 +1176,15 @@ let config = { theme: 'system', themeStyle: 'default', accentColor: '', brandCol
         aiKeyStatus,
         aiChats: { conversations: aiChats.conversations, activeId: aiChats.activeId },
         folders: ['默认', ...customFolders],
-        notes,
+        notes: allNotes,
         todos,
         dataCleanup: {
             repairedNotes,
             repairedTodos,
             skippedFiles: scanned.skipped,
             skippedTodoFiles: scannedTodos.skipped,
+            // 共享目录里被忽略的文件（不是笔记的东西）
+            skippedSharedFiles: scannedShared.skipped,
             // 自定义文件夹列表需要写回 config.json 时标记
             foldersChanged: JSON.stringify(normalizeCustomFolders(config.folders)) !== JSON.stringify(customFolders),
             legacyIndex: {
@@ -1132,31 +1248,38 @@ function saveConfig() {
     }
 }
 
-// 保存单篇笔记：元数据注释与正文一起写回 data/notes/{id}.md（内容未变时跳过写入）
+// 保存单篇笔记：元数据注释与正文一起写回（内容未变时跳过写入）。
+// 共享过来的笔记写回 shared/<所有者 id>/ 下——服务端据此把它算作对所有者那份的修改
 function saveNote(note) {
     if (!note || !note.id) return;
     ensureStorageDirs();
     try {
         const text = serializeNoteFile(note);
         if (savedNoteFiles.get(note.id) === text) return;
-        writeFileAtomic(path.join(NOTES_DIR, `${note.id}.md`), text);
+        const file = noteFilePath(note);
+        // 共享笔记的目录以所有者为单位，第一次写入时按需建出来
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        writeFileAtomic(file, text);
         savedNoteFiles.set(note.id, text);
     } catch (err) {
         console.error(`保存笔记 ${note.id} 失败:`, err);
     }
 }
 
-// 删除笔记文件（元数据与正文同在一份文件，删掉即彻底移除），并同步丢弃写入缓存
+/* 删除笔记文件（元数据与正文同在一份文件，删掉即彻底移除），并同步丢弃写入缓存。
+   共享笔记的删除不推给服务端：它属于所有者，接收方只能「退出共享」（见 scripts/team_notes.js）；
+   服务端也会拒收接收方对投影路径的删除。 */
 function deleteNoteFile(noteId) {
     savedNoteFiles.delete(noteId);
     // 会话里若还留着这一条的密钥，随文件一起丢掉
     if (typeof forgetSecretKey === 'function') forgetSecretKey(noteId);
+    const shared = parseSharedItemId(noteId);
     try {
-        const notePath = path.join(NOTES_DIR, `${noteId}.md`);
+        const notePath = shared ? sharedItemPath(shared.owner, shared.noteId) : path.join(NOTES_DIR, `${noteId}.md`);
         if (fs.existsSync(notePath)) {
             fs.unlinkSync(notePath);
             // 使用模式：本地删了，服务器上那份也要跟着删
-            notifyRemoteDelete(notePath);
+            if (!shared) notifyRemoteDelete(notePath);
         }
     } catch (err) {
         console.error(`删除笔记文件 ${noteId}.md 失败:`, err);

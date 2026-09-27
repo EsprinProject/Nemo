@@ -967,8 +967,22 @@
                             </div>
                             <div class="settings-row">
                                 <div class="settings-row-info">
+                                    <span class="settings-row-label">账户登录</span>
+                                    <span class="settings-row-desc">用服务端账户名与密码登录（密码至少 8 位；账户名留空即内置账户 admin），由服务端为该账户签发一个访问令牌并直接存入系统密钥链；令牌自动绑定本机设备 ID，服务端日志因此能认出改动来自哪台设备。账户名会随配置保存用于预填，密码只在这一次请求里使用，不写入任何文件</span>
+                                </div>
+                                <div class="sync-input-stack">
+                                    <div class="sync-input-group sync-login-group">
+                                        <input type="text" class="settings-input mono sync-login-field" id="setting-sync-account" spellcheck="false" placeholder="账户名" autocomplete="off">
+                                        <input type="password" class="settings-input mono sync-login-field" id="setting-sync-password" spellcheck="false" placeholder="密码" autocomplete="off">
+                                        <button class="settings-btn" id="btn-sync-login" title="用账户名与密码向服务端换取一个访问令牌，并保存到系统密钥链">登录并生成令牌</button>
+                                    </div>
+                                    <span class="sync-hint" id="sync-login-hint">尚未登录</span>
+                                </div>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
                                     <span class="settings-row-label">访问令牌</span>
-                                    <span class="settings-row-desc">在服务端管理页面（服务器地址 + /admin）创建的令牌；创建时可绑定设备，绑定后该令牌提交的操作都记为该设备。令牌由系统密钥链加密保存（Windows 为 DPAPI、macOS 为钥匙串、Linux 为 libsecret），不写入数据目录，也不随 config.json 复制或分享；服务端以启动参数 --token 指定令牌时填入该值</span>
+                                    <span class="settings-row-desc">由上方「账户登录」签发，或在服务端管理页面（服务器地址 + /admin）手动创建的令牌；创建时可绑定设备，绑定后该令牌提交的操作都记为该设备。令牌由系统密钥链加密保存（Windows 为 DPAPI、macOS 为钥匙串、Linux 为 libsecret），不写入数据目录，也不随 config.json 复制或分享；服务端以启动参数 --token 指定令牌时填入该值</span>
                                 </div>
                                 <div class="sync-input-stack">
                                     <div class="sync-input-group">
@@ -1026,6 +1040,23 @@
                                 </div>
                             </div>
                             <div class="settings-row-desc sync-status" id="sync-status">正在读取配置…</div>
+                        </div>
+
+                        <!-- 团队笔记：共享请求、共享到手与共享出去的笔记都汇总在这里（见 scripts/team_notes.js） -->
+                        <div class="settings-section">
+                            <div class="settings-section-title">团队笔记</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">共享请求</span>
+                                    <span class="settings-row-desc">别人把笔记共享过来时会出现在这里，同意后那篇笔记会同时出现在双方的笔记列表里（接收方保存在数据目录的 shared/ 子目录下）。共享笔记在列表中带有共享标记，正文可以直接编辑，改动会同步给所有者；隐藏、密码与废纸篓这些会连带改到对方那一篇的动作对共享笔记不可用，只能「退出共享」</span>
+                                </div>
+                                <div class="settings-actions">
+                                    <button class="settings-btn" id="btn-team-refresh" title="重新向服务器读取共享列表">刷新</button>
+                                </div>
+                            </div>
+                            <div class="team-list" id="team-requests"></div>
+                            <div class="team-list" id="team-shared"></div>
+                            <div class="settings-row-desc sync-status" id="team-status">正在读取共享列表…</div>
                         </div>
                     </div>
 
@@ -1191,6 +1222,7 @@
     <script src="./scripts/data_location.js"></script>
     <script src="./scripts/sync_server.js"></script>
     <script src="./scripts/journal_file.js"></script>
+    <script src="./scripts/team_notes.js"></script>
     <script src="./scripts/tray.js"></script>
     <script src="./scripts/auto_launch.js"></script>
     <script src="./scripts/update.js"></script>

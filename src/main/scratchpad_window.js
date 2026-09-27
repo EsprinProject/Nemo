@@ -37,7 +37,7 @@ let resolveRadius = () => 'default';
 let resolveFonts = () => ({});
 let resolveDataDir = () => '';
 let getOwnerWindow = () => null;
-let iconPath = path.join(__dirname, '..', '..', 'assets', 'icon.png');
+let iconPath = path.join(__dirname, '..', '..', 'assets', 'Main.new.png');
 // 便利贴关闭后的回调（由 main.js 注入）：主窗口也已关闭时据此退出应用
 let handleWindowClosed = () => {};
 let ipcRegistered = false;

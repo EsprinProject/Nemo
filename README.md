@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/EsprinProject/Logos/main/Nemo.png" width="88" height="88" alt="Esprin Nemo">
+<img src="https://raw.githubusercontent.com/EsprinProject/Logos/main/Main.new.svg" width="88" height="88" alt="Esprin Nemo">
 
 # Esprin Nemo
 
@@ -410,8 +410,8 @@ python sync.py --selftest
 
 | 地址 | 说明 |
 | --- | --- |
-| `GET /` | 网页版客户端页面（`/index.html` 同效；`/styles/*`、`/scripts/*`、`/fonts/*`、`/favicon.png` 是它的静态资源） |
-| `GET /admin` | 管理页面（`/admin/index.html` 同效；`/admin/app.css`、`/admin/app.js`、`/admin/favicon.png`、`/admin/fonts/*` 是它的静态资源） |
+| `GET /` | 网页版客户端页面（`/index.html` 同效；`/styles/*`、`/scripts/*`、`/fonts/*`、`/Main.new.svg`、`/Main.new.png` 是它的静态资源） |
+| `GET /admin` | 管理页面（`/admin/index.html` 同效；`/admin/app.css`、`/admin/app.js`、`/admin/Main.new.svg`、`/admin/fonts/*` 是它的静态资源） |
 | `GET /admin/api/status` | 是否已设密码、当前登录的账户与它是不是管理员（页面靠它决定显示哪一屏） |
 | `GET /admin/api/users` | 账户列表：角色、启用状态、令牌数、创建与最近登录时间、各自的数据量（需管理员） |
 | `GET /admin/api/tokens?user=` | 指定账户的令牌列表（不含摘要，需管理员；`user` 缺省时是自己） |
@@ -637,7 +637,8 @@ API Key **不随数据目录保存**，也不写入 `data/config.json`。
 ```text
 ├── package.json            # "main" 指向 src/main/main.js
 ├── assets/
-│   └── icon.png            # 应用图标（窗口 + 构建资源，取自 EsprinProject/Logos 的 Main.png）
+│   ├── Main.new.svg        # 应用图标矢量源（构建图标用它，见 package.json 的 build.icon）
+│   └── Main.new.png        # 同图形的位图版（窗口与托盘图标用它，nativeImage 不解析 SVG）
 ├── src/
 │   ├── main/               # 主进程
 │   │   ├── main.js         # 窗口、菜单、数据目录解析与迁移、IPC

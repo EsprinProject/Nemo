@@ -31,6 +31,10 @@ const { configureUpdater, registerUpdateIpc, scheduleAutoChecks, isPortableRun, 
 // 本文件位于 src/main/ 下，因此 assets/、src/renderer/ 与开发版 data/ 都相对它定位。
 const APP_ROOT = app.getAppPath();
 
+// 窗口与托盘图标一律用光栅版：Electron 的 nativeImage 只解 PNG / JPEG（Windows 另支持 ICO），
+// 不解析 SVG；矢量源是 assets/Main.new.svg，构建图标用的就是它（见 package.json 的 build.icon）
+const APP_ICON_PATH = path.join(APP_ROOT, 'assets', 'Main.new.png');
+
 // 安装版使用 %APPDATA%/esprin_nemo/data，开发运行（bun start → electron .）使用项目内 data/，
 // 便携版使用便携版所在目录下的 data/（数据与记录都随程序目录走，见 src/main/data_path.js）。
 // 安装向导与“设置 → 数据存放位置”把选择写进 data_path.json（安装版在 %APPDATA%/esprin_nemo 下，
@@ -208,7 +212,7 @@ configureDialogWindows({
   getBrandColor: resolveBrandColor,
   getRadius: resolveCornerRadius,
   getFonts: resolveWindowFonts,
-  icon: path.join(APP_ROOT, 'assets', 'icon.png')
+  icon: APP_ICON_PATH
 });
 
 // 小本本（便利贴窗口）：右下角置顶小窗，内容随数据目录一起走
@@ -221,7 +225,7 @@ configureScratchpadWindow({
   getDataDir: resolveDataDir,
   // 便利贴停靠在哪块屏幕右下角，取决于主窗口当前所在的显示器
   getOwner: () => mainWindow,
-  icon: path.join(APP_ROOT, 'assets', 'icon.png'),
+  icon: APP_ICON_PATH,
   // 便利贴关闭后：主窗口此前已被收起时，屏幕上再无窗口，应用也随之退出
   onClosed: handleScratchpadClosed
 });
@@ -269,7 +273,7 @@ function setupTray() {
   configureTray({
     getConfig: readUserConfig,
     getOwner: () => mainWindow,
-    icon: path.join(APP_ROOT, 'assets', 'icon.png'),
+    icon: APP_ICON_PATH,
     onShowMainWindow: showMainWindow,
     // 小本本与退出都在主进程内直接完成，不经过渲染进程
     onOpenScratchpad: openScratchpadWindow,
@@ -808,7 +812,7 @@ function createWindow() {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: initialBg,
-    icon: path.join(APP_ROOT, 'assets', 'icon.png'),
+    icon: APP_ICON_PATH,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,

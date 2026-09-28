@@ -183,22 +183,6 @@ jobs:
             dist/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        if: steps.check.outputs.published == 'false'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.check.outputs.tag }}
-          name: ${{ steps.check.outputs.tag }}
-          target_commitish: ${{ github.sha }}
-          # 优先使用生成或现有的 Release 说明
-          body_path: ${{ steps.release_notes.outputs.path || 'RELEASE.md' }}
-          generate_release_notes: true
-          draft: false
-          prerelease: false
-          # 发布 electron-builder 打出的两个 exe：Setup 与 Portable
-          files: |
-            dist/*.exe
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 清理 Actions 缓存
         # 无论构建/发布成功与否都执行，避免缓存不断累积占满仓库配额

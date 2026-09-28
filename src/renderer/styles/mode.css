@@ -1,7 +1,7 @@
 /* 界面布局：现代布局（<html class="modern-layout">）没有标题栏。
    标题栏整条移除——内容一路顶到窗口上沿、不再空出一条顶栏：应用名移到侧边栏顶部，
    标签栏挪到工作区顶部那一行（见下面的「工作区的标签栏」），
-   工具按钮（AI 助手 / 小本本 / 主题 / 全屏）与窗口操作键脱离布局、悬浮在窗口右上角，
+   工具按钮（AI 助手 / 小本本 / 桌面便利贴 / 主题 / 全屏）与窗口操作键脱离布局、悬浮在窗口右上角，
    原本由标题栏承担的拖动改由几处留白接手（见下面的拖动区）。
    除这一条顶栏之外功能一个不少：AI 助手面板与设置里的分类、小本本、
    侧边栏的文件夹与标签过滤、托盘菜单都与经典布局一致。
@@ -80,7 +80,7 @@ html.modern-layout .workspace-tabs {
     /* 拖动区同样不能伸到悬浮按钮下面（这一行正好是按钮那一层），因此让出右侧走廊
        （见下面「一条硬约束」）；用 margin 而不是 padding：padding 仍在盒子内，
        拖动区会跟着一起伸过去） */
-    margin-right: 280px;
+    margin-right: 312px;
     transition: margin-right var(--motion-slow) var(--ease-out),
                 padding-left var(--motion-base) var(--ease-out),
                 /* 两端渐隐的宽度（见下面「标签栏两端的渐隐」）：在 0 与 32px 之间过渡 */
@@ -287,7 +287,7 @@ html.modern-layout.tabs-disabled .notes-panel-header {
 
    一条硬约束：拖动区一律不能伸到悬浮按钮下面——两者重叠时按钮的点击会被拖动区吞掉，
    表现就是「右上角那排按钮点不动」。因此与按钮同处一行的标签栏、以及设置页顶端那条
-   拖动空白各自让出右侧 280px（即悬浮按钮组的宽度），面板顶部那条空白与空状态的拖动层
+   拖动空白各自让出右侧 312px（即悬浮按钮组的宽度），面板顶部那条空白与空状态的拖动层
    也都在按钮之外截断。（编辑器顶栏排在标签栏下面一行，与按钮没有重叠，不必让。） */
 html.modern-layout .editor-meta,
 html.modern-layout .editor-actions,
@@ -324,7 +324,7 @@ html.modern-layout .context-menu {
 
 /* 空状态的工作区：拖动区由 #empty-state 里的 .empty-drag-surface 承担（见 main.html）。
    铺在图标 / 文字 / 按钮之下（按钮自己的 no-drag 见 styles/base.css），
-   铺不到的「新建」菜单则靠上面那条 .dropdown-menu 规则；整列让开右侧 280px 后，
+   铺不到的「新建」菜单则靠上面那条 .dropdown-menu 规则；整列让开右侧 312px 后，
    即便此刻没有任何条目打开，右上角的悬浮按钮也不会被拖动区抢走点击。
    上沿由 --modern-drag-top 决定：标签栏那一行还在时（打开过标签、只是退回了笔记列表）
    必须让出那一行——拖动区判定的是一张矩形并集，这块空白后出现、又盖到那一行上，
@@ -335,14 +335,14 @@ html.modern-layout .context-menu {
 html.modern-layout .empty-drag-surface {
     display: block;
     position: absolute;
-    inset: var(--modern-drag-top) 280px 0 0;
+    inset: var(--modern-drag-top) 312px 0 0;
     z-index: -1;
     -webkit-app-region: drag;
 }
 
-/* 悬浮按钮组占住右上角约 270px 宽、40px 高的一条（4 个工具按钮 + 3 个窗口按钮）。
+/* 悬浮按钮组占住右上角约 302px 宽、40px 高的一条（5 个工具按钮 + 3 个窗口按钮）。
    这一条正好落在工作区顶部的标签栏那一行（见上面那段），所以只有标签栏需要让出右侧走廊；
-   编辑器顶栏已经排到标签栏下面一行，与按钮再无纵向重叠，不必再空出 280px——
+   编辑器顶栏已经排到标签栏下面一行，与按钮再无纵向重叠，不必再空出 312px——
    它只把左右内边距各收到 8px（见下），那排「编辑 / 分屏 / 预览」（以及待办才有的完成开关）
    因此能一直排到工作区右沿。
    设置页顶端的拖动空白同样落在按钮那一行的投影里，也照旧让出走廊（见下面那段）。 */
@@ -368,19 +368,19 @@ html.modern-layout .settings-drag-band {
     display: block;
     grid-column: 2;
     grid-row: 1;
-    margin-right: 280px;
+    margin-right: 312px;
     -webkit-app-region: drag;
 }
 /* 全屏时窗口按钮不显示（见 base.css），走廊收窄到工具按钮组那么宽 */
 html.modern-layout body.is-fullscreen .settings-drag-band {
-    margin-right: 146px;
+    margin-right: 178px;
 }
 /* 内容区紧接在这条空白下方，右侧一段仍落在悬浮按钮组的投影里，照旧让出走廊 */
 html.modern-layout .settings-view .settings-content {
     grid-column: 2;
     grid-row: 2;
     padding-top: 0;
-    padding-right: 280px;
+    padding-right: 312px;
 }
 /* 编辑器顶栏的左右内边距都收到 8px：右侧那组控件（视图切换，以及仅待办可见的完成开关）
    与上面标签栏的内边距对齐（标签栏最右那个标签同样停在右沿 8px 处），
@@ -394,7 +394,7 @@ html.modern-layout .editor-topbar {
    那排「编辑 / 分屏 / 预览」也会被压在按钮下面。
    AI 面板打开时右侧那段本就归面板所有，走廊随之取消（同下面那条 :has 规则） */
 html.modern-layout.tabs-disabled .editor-topbar {
-    padding-right: 280px;
+    padding-right: 312px;
     transition: padding-right var(--motion-slow) var(--ease-out),
                 padding-left var(--motion-base) var(--ease-out);
 }
@@ -405,7 +405,7 @@ html.modern-layout.tabs-disabled .editor-topbar {
     padding-left: var(--tabs-back-slot);
 }
 html.modern-layout.tabs-disabled body.is-fullscreen .editor-topbar {
-    padding-right: 146px;
+    padding-right: 178px;
 }
 html.modern-layout.tabs-disabled .app-body:has(#ai-panel:not(.hidden):not(.ai-collapsed)) .editor-topbar {
     padding-right: 16px;
@@ -413,26 +413,26 @@ html.modern-layout.tabs-disabled .app-body:has(#ai-panel:not(.hidden):not(.ai-co
 /* 全屏时窗口按钮不显示（见 base.css），走廊收窄到工具按钮组那么宽；
    同时像标题栏那样禁用拖动区，免得在无边框全屏里误拖 */
 html.modern-layout body.is-fullscreen .settings-view .settings-content {
-    padding-right: 146px;
+    padding-right: 178px;
 }
 html.modern-layout body.is-fullscreen .workspace-tabs {
-    margin-right: 146px;
+    margin-right: 178px;
     -webkit-app-region: no-drag;
 }
 
 /* AI 面板贴着工作区右侧（360px 宽），悬浮按钮组正好压在它的 40px 顶栏上，
    会把那排「新建对话 / 对话记录 / 清空 / 关闭」盖住：面板里垫一块 40px 的拖动空白
    （.ai-panel-drag-strip，见 main.html），把面板顶栏让到按钮下面，这块空白本身也能拖窗口。
-   宽度上要停在悬浮按钮组的左沿（面板宽 360 - 按钮组宽 270）：
+   宽度上要停在悬浮按钮组的左沿（面板宽 360 - 按钮组宽 302）：
    这条空白是拖动区，再往右伸就会钻到按钮下面，把那排按钮的点击吞掉。 */
 html.modern-layout .ai-panel-drag-strip {
     display: block;
-    margin-right: 270px;
+    margin-right: 302px;
     -webkit-app-region: drag;
 }
-/* 全屏时窗口按钮不显示（见 base.css），按钮组只剩工具按钮那 138px，空白可以放宽一些 */
+/* 全屏时窗口按钮不显示（见 base.css），按钮组只剩工具按钮那 170px，空白可以放宽一些 */
 html.modern-layout body.is-fullscreen .ai-panel-drag-strip {
-    margin-right: 138px;
+    margin-right: 170px;
 }
 /* 面板顶栏（40px 高，在悬浮按钮下面一层）整条都能拖，按钮单独标回 no-drag */
 html.modern-layout .ai-panel-header {
@@ -448,7 +448,7 @@ html.modern-layout .ai-drawer {
 }
 
 /* 面板打开时，窗口右侧那 360px 已经归面板所有，悬浮按钮组整组落在面板上方，
-   工作区标签栏与空状态拖动层都不必再让出走廊——否则标签栏右侧那 280px 空白会让
+   工作区标签栏与空状态拖动层都不必再让出走廊——否则标签栏右侧那 312px 空白会让
    标签之外的拖动区被挤没，表现就是「开了 AI 之后窗口拖不动」。
    两者都在右侧且面板比按钮组宽，让出走廊反而多余。（编辑器顶栏本来就不让，见上面那段。）
 

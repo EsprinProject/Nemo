@@ -42,6 +42,9 @@ function contextMenuItems(item) {
         label: item.isPinned ? '取消置顶' : `置顶${label}`
     });
 
+    // 桌面便利贴：把这条内容贴到桌面上（见 scripts/sticky_notes.js）
+    items.push({ action: 'stick', icon: 'keep', label: '贴到桌面' });
+
     /* 共享过来的笔记：隐藏、密码与废纸篓都会连带改到所有者那一篇（或本就删不掉），
        因此只给「打开 / 置顶 / 导出 / 退出共享」这一组动作 */
     if (isSharedItem(item)) {
@@ -135,6 +138,8 @@ document.getElementById('note-context-menu').onclick = (e) => {
         toggleTodoDone(contextItemId);
     } else if (action === 'pin') {
         togglePin(contextItemId);
+    } else if (action === 'stick') {
+        stickItemToDesktop(contextItemId);
     } else if (action === 'hide') {
         toggleItemHidden(contextItemId);
     } else if (action === 'set-password') {
@@ -287,6 +292,10 @@ document.getElementById('new-item-menu').onclick = (e) => {
 window.addEventListener('click', (e) => {
     if (!e.target.closest('#note-context-menu')) hideContextMenu();
     if (!e.target.closest('#folder-context-menu')) hideFolderContextMenu();
+    // 桌面便利贴菜单：点触发按钮本身交由按钮的点击处理切换
+    if (!e.target.closest('#sticky-notes-menu') && !e.target.closest('#btn-sticky-notes')) {
+        if (typeof hideStickyMenu === 'function') hideStickyMenu();
+    }
     const isNewMenuTrigger = !!e.target.closest('#btn-empty-new')
         || (!isModernLayout() && !!e.target.closest('#btn-new-note'));
     if (!e.target.closest('#new-item-menu') && !isNewMenuTrigger) {

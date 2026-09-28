@@ -30,6 +30,9 @@ let getOwnerWindow = () => null;
 let iconPath = '';
 let onShowMainWindow = () => null;
 let onOpenScratchpad = () => {};
+let onNewStickyNote = () => {};
+let onShowStickyNotes = () => 0;
+let onHideStickyNotes = () => 0;
 let onQuit = () => {};
 let onEnabledChanged = () => {};
 
@@ -40,6 +43,9 @@ function configureTray(options = {}) {
   if (typeof options.icon === 'string' && options.icon) iconPath = options.icon;
   if (typeof options.onShowMainWindow === 'function') onShowMainWindow = options.onShowMainWindow;
   if (typeof options.onOpenScratchpad === 'function') onOpenScratchpad = options.onOpenScratchpad;
+  if (typeof options.onNewStickyNote === 'function') onNewStickyNote = options.onNewStickyNote;
+  if (typeof options.onShowStickyNotes === 'function') onShowStickyNotes = options.onShowStickyNotes;
+  if (typeof options.onHideStickyNotes === 'function') onHideStickyNotes = options.onHideStickyNotes;
   if (typeof options.onQuit === 'function') onQuit = options.onQuit;
   if (typeof options.onEnabledChanged === 'function') onEnabledChanged = options.onEnabledChanged;
 
@@ -73,13 +79,22 @@ function trayIcon() {
   return image.resize({ width: ICON_SIZE, height: ICON_SIZE });
 }
 
-// 右键菜单：打开主窗口 / 小本本 / 新建笔记 / 新建待办 / 设置 / 退出。
-// 条目与界面布局无关：现代布局只是不排标题栏（标签栏移到工作区顶部），小本本照旧提供
+// 右键菜单：打开主窗口 / 小本本 / 桌面便利贴 / 新建笔记 / 新建待办 / 设置 / 退出。
+// 条目与界面布局无关：现代布局只是不排标题栏（标签栏移到工作区顶部），小本本与便利贴照旧提供
 function buildTrayMenu() {
   const template = [
     { label: '打开 Esprin Nemo', click: () => { onShowMainWindow(); } },
     { type: 'separator' },
     { label: '小本本', click: () => { onOpenScratchpad(); } },
+    {
+      label: '桌面便利贴',
+      // 三个动作都在主进程内完成，与窗口是否开着无关
+      submenu: [
+        { label: '贴上便利贴', click: () => { sendAction('pick-sticky-note'); } },
+        { label: '显示全部便利贴', click: () => { onShowStickyNotes(); } },
+        { label: '收起全部便利贴', click: () => { onHideStickyNotes(); } }
+      ]
+    },
     { label: '新建笔记', click: () => { sendAction(ACTION_NEW_NOTE); } },
     { label: '新建待办', click: () => { sendAction(ACTION_NEW_TODO); } },
     { label: '设置', click: () => { sendAction(ACTION_OPEN_SETTINGS); } },

@@ -54,7 +54,8 @@ function toggleTodoDone(todoId) {
     // 废纸篓中与还没解锁的加密待办都是只读的，完成状态也无从切换
     if (!todo || isReadOnlyItem(todo)) return;
     todo.isDone = !todo.isDone;
-    saveTodo(todo);
+    // 走共用的保存入口：桌面便利贴上的同一项也会跟着勾上
+    saveItem(todo);
     renderApp();
     showToast(todo.isDone ? '已完成' : '已标记为未完成');
 }

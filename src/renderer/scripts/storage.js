@@ -1167,6 +1167,8 @@ let config = { theme: 'system', themeStyle: 'default', accentColor: '', brandCol
         autoLaunch: config.autoLaunch === true,
         // 系统托盘默认显示：同样只有显式写成 false 才视为关闭
         trayEnabled: config.trayEnabled !== false,
+        // 桌面便利贴：总开关与默认纸张颜色
+        stickyNotes: normalizeStickyConfig(config.stickyNotes),
         fonts: normalizeFonts(config.fonts),
         ai: normalizeAiConfig(config.ai),
         // 随口记（语音转文本）：入口、识别语言与联网兜底开关
@@ -1226,6 +1228,9 @@ function saveConfig() {
             autoLaunch: State.autoLaunch === true,
             // 系统托盘（默认显示）：主进程读取这一项决定是否创建托盘图标
             trayEnabled: State.trayEnabled !== false,
+            /* 桌面便利贴（默认开启）：主进程读取这一项决定要不要把列在记录里的便利贴贴出来，
+               同时取其中的默认纸张颜色用于新建 */
+            stickyNotes: normalizeStickyConfig(State.stickyNotes),
             // 当前选中的 AI 对话：对话本体在 ai_chats/ 下，这里只记一个 id
             aiActiveChat: typeof State.aiActiveConversationId === 'string' ? State.aiActiveConversationId : '',
             folders: normalizeCustomFolders(State.folders),
@@ -1284,6 +1289,8 @@ function deleteNoteFile(noteId) {
     } catch (err) {
         console.error(`删除笔记文件 ${noteId}.md 失败:`, err);
     }
+    // 笔记已彻底删除：贴在它上面的便利贴解除绑定（见 scripts/sticky_notes.js）
+    if (typeof notifyStickyItemRemoved === 'function') notifyStickyItemRemoved(noteId);
 }
 
 // 保存单份待办：写回 data/todos/{id}.md，格式与笔记一致（内容未变时跳过写入）
@@ -1315,12 +1322,17 @@ function deleteTodoFile(todoId) {
     } catch (err) {
         console.error(`删除待办文件 ${todoId}.md 失败:`, err);
     }
+    // 待办已彻底删除：贴在它上面的便利贴解除绑定（见 scripts/sticky_notes.js）
+    if (typeof notifyStickyItemRemoved === 'function') notifyStickyItemRemoved(todoId);
 }
 
 // 按条目类型分发读写：笔记与待办共用编辑器与标签页，保存/删除时按归属选目标目录
 function saveItem(item) {
     if (isTodoItem(item)) saveTodo(item);
     else saveNote(item);
+    /* 贴在桌面上的便利贴同步刷新（见 scripts/sticky_notes.js）：
+       本函数是主窗口侧所有条目改动的汇合点，因此只需在这里通知一次 */
+    if (typeof notifyStickyItemSaved === 'function') notifyStickyItemSaved(item);
 }
 
 function deleteItemFile(itemId) {

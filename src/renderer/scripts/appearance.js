@@ -140,6 +140,7 @@ function applyTheme() {
 
 // 小本本（便利贴窗口）与应用观感保持一致：明暗主题、主题风格、主题色、圆角尺度或字体变化后同步给主进程，
 // 由主进程转发给便利贴窗口；便利贴未打开时这次广播会被忽略，无副作用。
+// 桌面便利贴走同一条广播（见 scripts/sticky_notes.js 的 syncStickyNotesAppearance）。
 function syncScratchpadAppearance() {
     try {
         ipcRenderer.send('scratchpad:appearance', {
@@ -153,6 +154,8 @@ function syncScratchpadAppearance() {
     } catch (err) {
         console.error('同步小本本外观失败:', err);
     }
+
+    if (typeof syncStickyNotesAppearance === 'function') syncStickyNotesAppearance();
 }
 
 // 受"错词红波浪线检查"开关控制的可编辑区域（笔记标题 + 正文）

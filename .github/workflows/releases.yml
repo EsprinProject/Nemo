@@ -7,7 +7,6 @@ on:
       - main
     paths:
       - package.json
-      - .github/releases.md
       - .github/workflows/releases.yml
   workflow_dispatch:
 
@@ -72,6 +71,103 @@ jobs:
         shell: bash
         run: ls -lh dist
 
+      - name: 生成发行版说明
+        if: steps.check.outputs.published == 'false'
+        id: release_notes
+        shell: bash
+        env:
+          AI_RELEASE: ${{ secrets.AI_RELEASE }}
+        run: |
+          echo "收集 git 提交历史..."
+          LAST_TAG=$(git describe --tags --abbrev=0 "${{ github.sha }}^" 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            COMMITS=$(git log "$LAST_TAG..${{ github.sha }}" --pretty=format:"* %s (%h)" --no-merges)
+          else
+            COMMITS=$(git log -n 30 --pretty=format:"* %s (%h)" --no-merges)
+          fi
+
+          if [ -z "$COMMITS" ]; then
+            COMMITS="* 版本常规更新与问题修复"
+          fi
+
+          COMMITS="$COMMITS" VERSION="$VERSION" node -e '
+            const fs = require("fs");
+            const commits = process.env.COMMITS || "";
+            const version = process.env.VERSION || "";
+
+            // 解析机密配置
+            function parseConfig(raw) {
+              const config = {};
+              if (!raw) return config;
+              const lines = raw.split(/\r?\n/);
+              for (const line of lines) {
+                const match = line.match(/^\s*([A-Za-z0-9_]+)\s*[:=]\s*(?:"([^"]*)"|'\''([^'\'']*)'\''|(.*))\s*$/);
+                if (match) {
+                  const key = match[1].toUpperCase();
+                  const val = (match[2] ?? match[3] ?? match[4] ?? "").trim();
+                  if (val) config[key] = val;
+                }
+              }
+              return config;
+            }
+
+            const parsed = parseConfig(process.env.AI_RELEASE);
+            const key = parsed.KEY || "";
+            const url = parsed.URL || "";
+            const model = parsed.MODEL || "";
+
+            async function run() {
+              if (!key || !url || !model) {
+                console.log("未提供完整的 AI_RELEASE 机密配置（需包含 URL, KEY, MODEL），使用提交日志。");
+                fs.writeFileSync("GENERATED_RELEASE.md", "### 更新日志\n\n" + commits, "utf8");
+                return;
+              }
+
+              console.log("正在调用 AI 生成发行版说明...");
+              const prompt = `你是一个软件工程助理。请根据以下 Git 提交日志，为版本 v${version} 构思发行版更新说明（Release Notes）。\n\n输出格式要求（严格遵守）：\n首行输出一句话更新总结（20字左右，客观精炼）\n空一行\n按无序列表输出具体的更新点（每项以 - 开头）\n\n示例格式：\n20字的更新总结\n\n- 更新1\n- 更新2\n- 更新3\n\n约束：\n1. 严禁使用 Emoji 表情。\n2. 严禁使用 markdown 代码块包裹标记（\`\`\`）。\n3. 仅直接输出 Markdown 正文。\n\n提交日志：\n${commits}`;
+
+              try {
+                let endpoint = url.replace(/\/+$/, "");
+                if (!endpoint.endsWith("/chat/completions")) {
+                  endpoint += "/chat/completions";
+                }
+
+                const res = await fetch(endpoint, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${key}`
+                  },
+                  body: JSON.stringify({
+                    model: model,
+                    messages: [{ role: "user", content: prompt }]
+                  })
+                });
+
+                const data = await res.json();
+                let text = data.choices?.[0]?.message?.content || "";
+                text = text.trim();
+                if (text.startsWith("\`\`\`markdown")) {
+                  text = text.replace(/^```markdown\s*/, "").replace(/\s*```$/, "");
+                } else if (text.startsWith("\`\`\`")) {
+                  text = text.replace(/^```\s*/, "").replace(/\s*```$/, "");
+                }
+
+                if (text) {
+                  fs.writeFileSync("GENERATED_RELEASE.md", text, "utf8");
+                  return;
+                }
+              } catch (err) {
+                console.error("AI 生成失败:", err);
+              }
+
+              fs.writeFileSync("GENERATED_RELEASE.md", "### 更新日志\n\n" + commits, "utf8");
+            }
+
+            run();
+          '
+          echo "path=GENERATED_RELEASE.md" >> "$GITHUB_OUTPUT"
+
       - name: 发布 Release
         if: steps.check.outputs.published == 'false'
         uses: softprops/action-gh-release@v2
@@ -79,8 +175,23 @@ jobs:
           tag_name: ${{ steps.check.outputs.tag }}
           name: ${{ steps.check.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          # Release 说明使用 .github/releases.md 的内容
-          body_path: .github/releases.md
+          body_path: ${{ steps.release_notes.outputs.path }}
+          draft: false
+          prerelease: false
+          # 发布 electron-builder 打出的两个 exe：Setup 与 Portable
+          files: |
+            dist/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: steps.check.outputs.published == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.check.outputs.tag }}
+          name: ${{ steps.check.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          # 优先使用生成或现有的 Release 说明
+          body_path: ${{ steps.release_notes.outputs.path || 'RELEASE.md' }}
+          generate_release_notes: true
           draft: false
           prerelease: false
           # 发布 electron-builder 打出的两个 exe：Setup 与 Portable

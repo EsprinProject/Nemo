@@ -56,6 +56,10 @@
                 <button class="btn-action-icon" id="btn-scratchpad" title="小本本">
                     <span class="ms-icon sm">sticky_note_2</span>
                 </button>
+                <!-- 桌面便利贴：把笔记或待办贴到桌面上（见 scripts/sticky_notes.js） -->
+                <button class="btn-action-icon" id="btn-sticky-notes" title="桌面便利贴">
+                    <span class="ms-icon sm">keep</span>
+                </button>
                 <button class="btn-action-icon" id="btn-theme-toggle" title="切换主题">
                     <span class="ms-icon sm" id="theme-icon">computer</span>
                 </button>
@@ -1060,7 +1064,7 @@
                         </div>
                     </div>
 
-                    <!-- 分类：系统（启动与托盘 / 更新与版本） -->
+                    <!-- 分类：系统（启动与托盘 / 桌面便利贴 / 更新与版本） -->
                     <div class="settings-panel hidden" data-settings-panel="system">
                         <!-- 分区一：启动与托盘 —— 两个开关说的都是「应用怎么在系统里待着」 -->
                         <div class="settings-section">
@@ -1080,7 +1084,7 @@
                             <div class="settings-row">
                                 <div class="settings-row-info">
                                     <span class="settings-row-label">显示托盘图标</span>
-                                    <span class="settings-row-desc">在任务栏通知区域显示 EsprinNemo 图标：右键菜单可打开主窗口 / 小本本、新建笔记、新建待办或进入设置；左键单击将主窗口唤回前台</span>
+                                    <span class="settings-row-desc">在任务栏通知区域显示 EsprinNemo 图标：右键菜单可打开主窗口 / 小本本、新建 / 显示便利贴、新建笔记、新建待办或进入设置；左键单击将主窗口唤回前台</span>
                                 </div>
                                 <label class="switch">
                                     <input type="checkbox" id="setting-tray-enabled">
@@ -1088,6 +1092,51 @@
                                 </label>
                             </div>
                             <div class="settings-row-desc" id="tray-status">正在读取托盘状态…</div>
+                        </div>
+
+                        <!-- 分区二：桌面便利贴 —— 把待办或笔记贴到桌面上的一组置底小窗口
+                             （见 scripts/sticky_notes.js 与 main/sticky_notes.js） -->
+                        <div class="settings-section">
+                            <div class="settings-section-title">桌面便利贴</div>
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">启用桌面便利贴</span>
+                                    <span class="settings-row-desc">在桌面上贴出便利贴：把待办或笔记贴到桌面，随时勾选与编辑，改动写回原来的条目。关闭后不再新建，已贴出的便利贴全部收起（记录保留，重新开启即贴回）</span>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" id="setting-sticky-enabled">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="settings-row-desc">便利贴贴在桌面层：始终位于其他窗口之下（与桌面同级），不会遮挡任何应用窗口，点击它也不会浮到最前。想看桌面上的便利贴，把挡着的窗口最小化或按 Win + D 显示桌面即可。关闭某张便利贴：在它上面右键选「关闭并移除」。</div>
+
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">新建时默认颜色</span>
+                                    <span class="settings-row-desc">便利贴的纸张颜色；每张便利贴的标题栏左侧圆点里可单独更换</span>
+                                </div>
+                                <select class="settings-select" id="setting-sticky-color">
+                                    <option value="yellow">黄色</option>
+                                    <option value="green">绿色</option>
+                                    <option value="blue">蓝色</option>
+                                    <option value="pink">粉色</option>
+                                    <option value="purple">紫色</option>
+                                    <option value="gray">灰色</option>
+                                </select>
+                            </div>
+
+                            <div class="settings-row">
+                                <div class="settings-row-info">
+                                    <span class="settings-row-label">已贴出的便利贴</span>
+                                    <span class="settings-row-desc" id="sticky-count">正在读取…</span>
+                                </div>
+                                <div class="settings-actions">
+                                    <button class="settings-btn" id="btn-sticky-show-all" title="把收起的便利贴重新贴出来">全部显示</button>
+                                    <button class="settings-btn" id="btn-sticky-hide-all" title="把便利贴收进后台（记录保留）">全部收起</button>
+                                    <button class="settings-btn primary" id="btn-sticky-new" title="选择一篇笔记贴到桌面上">贴上便利贴</button>
+                                    <button class="settings-btn" id="btn-sticky-clear" title="移除全部便利贴与它们的记录">清除全部</button>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- 更新与版本：并入「系统」分类；便携版整块摘掉（见 scripts/update.js） -->
@@ -1194,6 +1243,10 @@
          外观直接复用下拉菜单的一套（见 styles/dropdown.css），位置由 scripts/context_menu.js 计算 -->
     <div class="dropdown-menu new-item-menu hidden" id="new-item-menu"></div>
 
+    <!-- Sticky Notes Menu（桌面便利贴：贴当前内容 / 新建空白纸 / 显示与收起全部，
+         位置与样式同样复用下拉菜单的一套，见 scripts/sticky_notes.js） -->
+    <div class="dropdown-menu new-item-menu hidden" id="sticky-notes-menu"></div>
+
     <!-- Toast Container -->
     <div class="toast-box" id="toast-container"></div>
 
@@ -1216,6 +1269,7 @@
     <script src="./scripts/secret.js"></script>
     <script src="./scripts/todos.js"></script>
     <script src="./scripts/scratchpad.js"></script>
+    <script src="./scripts/sticky_notes.js"></script>
     <script src="./scripts/editor.js"></script>
     <script src="./scripts/voice_notes.js"></script>
     <script src="./scripts/settings.js"></script>

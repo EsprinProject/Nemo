@@ -12,7 +12,7 @@ const SETTINGS_CATEGORIES = [
     { id: 'ai', label: 'AI 助手', icon: 'chat_bubble', desc: '接口、密钥与提问上下文' },
     { id: 'secret', label: '秘密本', icon: 'lock', desc: '隐藏或已加密的文档：隐藏的条目只在这里能找到' },
     { id: 'data', label: '数据与同步', icon: 'folder', desc: '本地数据目录、文件日志与自建同步' },
-    { id: 'system', label: '系统', icon: 'dock_to_bottom', desc: '开机自启、托盘、更新与版本' }
+    { id: 'system', label: '系统', icon: 'dock_to_bottom', desc: '开机自启、托盘、桌面便利贴与更新版本' }
 ];
 
 // 记录当前分类，退出设置再进入时仍停留在原来的一类

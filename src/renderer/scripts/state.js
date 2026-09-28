@@ -55,6 +55,10 @@ const State = {
     autoLaunch: false,
     // 系统托盘：默认显示托盘图标，关闭后应用不再随窗口关闭而驻留
     trayEnabled: true,
+    /* 桌面便利贴（随 config.json 落盘）：在桌面上贴出便利贴的总开关
+       与新建时的默认纸张颜色（见 scripts/sticky_notes.js）。
+       便利贴贴在桌面层（位于所有窗口之下），没有置顶开关 */
+    stickyNotes: { enabled: true, color: 'yellow' },
     // 自建同步（随 config.json 落盘）：服务器地址、设备名、自动同步节奏，以及上次同步的时刻与结果。
     // 令牌不在配置里：它由主进程存进系统密钥链，这里只保留「是否已保存」（syncTokenSaved）
     syncServer: {
@@ -104,6 +108,18 @@ const State = {
 
 // 界面布局（config.json 中的 uiMode 只接受这两个值，默认现代布局）
 const UI_MODE_VALUES = ['classic', 'modern'];
+
+// 桌面便利贴的纸张颜色（与 main/sticky_notes.js 的 COLOR_VALUES 一一对应）
+const STICKY_COLOR_VALUES = ['yellow', 'green', 'blue', 'pink', 'purple', 'gray'];
+
+// 桌面便利贴设置：总开关默认开启，颜色非法时回退为黄色
+function normalizeStickyConfig(value) {
+    const source = value && typeof value === 'object' ? value : {};
+    return {
+        enabled: source.enabled !== false,
+        color: STICKY_COLOR_VALUES.includes(source.color) ? source.color : 'yellow'
+    };
+}
 
 // 现代布局先后叫过「Line 模式」「无Tab模式」与「极简模式」，旧配置里存的仍是 line / notab 与 minimal；
 // 更早的经典布局则写作 standard。读到这些旧值就一并落到 modern / classic，

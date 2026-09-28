@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>桌面便利贴</title>
+    <!-- 外观引导：明暗主题 / 主题风格 / 圆角尺度 / 主题色 / 字体由主进程经命令行参数注入，
+         与主窗口、小本本共用同一套应用逻辑（window_appearance.js），首屏渲染前落定，避免闪烁 -->
+    <script src="./window_appearance.js"></script>
+    <script>window.applyWindowAppearance(window.readWindowAppearanceFromArgs());</script>
+    <link rel="stylesheet" href="../../node_modules/material-symbols/rounded.css">
+    <!-- 与小本本共用同一套窗口骨架：tokens（颜色 / 字体）→ window_shell（窗口骨架与标题栏）
+         → alom / magic_style（界面风格覆盖）→ radius（圆角尺度换算，按约定排在风格之后） -->
+    <link rel="stylesheet" href="./styles/tokens.css">
+    <link rel="stylesheet" href="./styles/window_shell.css">
+    <link rel="stylesheet" href="./styles/alom.css">
+    <link rel="stylesheet" href="./styles/magic_style.css">
+    <link rel="stylesheet" href="./styles/radius.css">
+    <style>
+        :root {
+            /* 便利贴窗口比主窗口窄：窗口按钮收窄一点，给标题留出空间 */
+            --win-btn-width: 30px;
+        }
+
+        /* 纸张配色：由色相角推导出一组同源颜色，明暗两套互不干扰。
+           色相角来自主进程（见 main/sticky_notes.js 的 COLOR_HUES），页面只负责取色 */
+        body {
+            --sticky-hue: 48;
+            --paper-bg: hsl(var(--sticky-hue) 18% 15%);
+            --paper-ink: hsl(var(--sticky-hue) 26% 90%);
+            --paper-line: hsl(var(--sticky-hue) 16% 26%);
+            --paper-muted: hsl(var(--sticky-hue) 12% 60%);
+            --paper-hover: hsl(var(--sticky-hue) 20% 22%);
+            background-color: var(--paper-bg);
+        }
+        html.light body {
+            --paper-bg: hsl(var(--sticky-hue) 84% 90%);
+            --paper-ink: hsl(var(--sticky-hue) 38% 16%);
+            --paper-line: hsl(var(--sticky-hue) 46% 78%);
+            --paper-muted: hsl(var(--sticky-hue) 24% 38%);
+            --paper-hover: hsl(var(--sticky-hue) 62% 84%);
+        }
+
+        body[data-sticky-color="green"] { --sticky-hue: 96; }
+        body[data-sticky-color="blue"] { --sticky-hue: 205; }
+        body[data-sticky-color="pink"] { --sticky-hue: 335; }
+        body[data-sticky-color="purple"] { --sticky-hue: 268; }
+        body[data-sticky-color="gray"] { --sticky-hue: 220; }
+
+        .sticky-container {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background-color: var(--paper-bg);
+            color: var(--paper-ink);
+        }
+
+        /* 标题栏整条是拖动把手（window_shell.css 的 .titlebar 已标 drag），
+           这里只把它做薄一点：便利贴窗口小，40px 的标题栏占了太多纸面 */
+        .titlebar {
+            height: 32px;
+            padding-left: 8px;
+            background-color: transparent;
+            border-bottom-color: var(--paper-line);
+        }
+        .win-btn {
+            color: var(--paper-muted);
+        }
+        .win-btn:hover {
+            background-color: var(--paper-hover);
+            color: var(--paper-ink);
+        }
+
+        /* 纸张颜色：圆点本身就是入口，点开在标题栏里向右展开色板（见 .sticky-colors）。
+           标题栏整条是拖动区，栏内的可点元素必须标回 no-drag，否则点击会被拖动区吞掉 */
+        .sticky-color-btn {
+            width: 20px;
+            height: 100%;
+            flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            -webkit-app-region: no-drag;
+        }
+        .sticky-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background-color: hsl(var(--sticky-hue) 62% 58%);
+            box-shadow: 0 0 0 1px hsl(var(--sticky-hue) 40% 45% / 0.35);
+            transition: transform 0.12s;
+        }
+        .sticky-color-btn:hover .sticky-dot { transform: scale(1.25); }
+
+        /* 待办完成勾选：紧挨颜色圆点，只有绑定待办时才排出来 */
+        .sticky-done {
+            width: 20px;
+            height: 100%;
+            flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            -webkit-app-region: no-drag;
+        }
+        .sticky-done input {
+            width: 13px;
+            height: 13px;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+        .sticky-done input:disabled { cursor: default; }
+
+        /* 标题就在标题栏：预览态只是文本，指针事件透过去，整条标题栏都能拖窗口；
+           编辑态才变成输入框（见 .sticky-container.editing） */
+        #sticky-title {
+            flex: 1;
+            min-width: 0;
+            height: 100%;
+            padding: 0 4px;
+            border: none;
+            outline: none;
+            background-color: transparent;
+            color: var(--paper-ink);
+            font-family: inherit;
+            font-size: 12.5px;
+            font-weight: 600;
+        }
+        #sticky-title::placeholder {
+            color: var(--paper-muted);
+            font-weight: 400;
+        }
+        /* 预览态：标题只是文本，指针事件透给标题栏，整条标题栏（含标题那一格）都能拖窗口 */
+        .sticky-container:not(.editing) #sticky-title {
+            pointer-events: none;
+            user-select: none;
+            cursor: default;
+        }
+        /* 编辑态：标题要能点进去输入，从拖动区里抠出来。
+           拖动区与 no-drag 的叠放最好理解成「拖动区要么整条不动、要么让开」：
+           预览态不给 no-drag，编辑态才给，两种状态各自都是确定的 */
+        .sticky-container.editing #sticky-title {
+            -webkit-app-region: no-drag;
+        }
+        /* 已完成的待办：标题划掉，与列表卡片的表达一致 */
+        .sticky-container.done #sticky-title {
+            text-decoration: line-through;
+            color: var(--paper-muted);
+        }
+        /* 编辑态下标题输入占满中段，这一小段拖动区免得进了编辑就搬不动窗口 */
+        .sticky-grip {
+            width: 14px;
+            height: 100%;
+            flex-shrink: 0;
+        }
+
+        .sticky-body {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        /* 预览：纸面上的渲染结果，不带行线也不带底栏 */
+        #sticky-preview {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 8px 14px 14px;
+            font-family: var(--font-doc);
+            font-size: 13px;
+            line-height: 1.7;
+            overflow-wrap: break-word;
+            user-select: text;
+        }
+        #sticky-preview:empty::before {
+            content: '暂无内容';
+            color: var(--paper-muted);
+        }
+
+        /* 编辑：整张纸就是文本框（默认态是预览，点标题栏的编辑按钮才进来） */
+        #sticky-content {
+            flex: 1;
+            width: 100%;
+            min-height: 0;
+            padding: 8px 14px 14px;
+            border: none;
+            outline: none;
+            resize: none;
+            background-color: transparent;
+            color: var(--paper-ink);
+            font-family: var(--font-doc);
+            font-size: 13px;
+            line-height: 1.7;
+            user-select: text;
+        }
+        #sticky-content::placeholder {
+            color: var(--paper-muted);
+        }
+
+        /* Markdown 预览的排版：跟着纸张配色走。
+           不复用 editor.css 的 .markdown-body——那套取的是主窗口的正文与边框色，
+           贴在彩色纸面上会发灰（见 scripts/markdown.js 的 marked） */
+        #sticky-preview h1,
+        #sticky-preview h2,
+        #sticky-preview h3 {
+            margin: 12px 0 6px;
+            font-weight: 600;
+            line-height: 1.4;
+        }
+        #sticky-preview h1 { font-size: 17px; }
+        #sticky-preview h2 { font-size: 15px; }
+        #sticky-preview h3 { font-size: 13.5px; }
+        #sticky-preview p { margin: 8px 0; }
+        #sticky-preview > *:first-child { margin-top: 0; }
+        #sticky-preview > *:last-child { margin-bottom: 0; }
+        #sticky-preview ul,
+        #sticky-preview ol {
+            margin: 8px 0;
+            padding-left: 20px;
+        }
+        #sticky-preview li { margin: 3px 0; }
+        #sticky-preview a {
+            color: inherit;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+        #sticky-preview strong { font-weight: 600; }
+        #sticky-preview code {
+            padding: 1px 4px;
+            border-radius: var(--radius-sm);
+            background-color: var(--paper-hover);
+            font-family: ui-monospace, Consolas, monospace;
+            font-size: 12px;
+        }
+        #sticky-preview pre {
+            margin: 8px 0;
+            padding: 8px 10px;
+            border-radius: var(--radius-sm);
+            background-color: var(--paper-hover);
+            overflow-x: auto;
+        }
+        #sticky-preview pre code {
+            padding: 0;
+            background-color: transparent;
+        }
+        #sticky-preview blockquote {
+            margin: 8px 0;
+            padding-left: 10px;
+            border-left: 2px solid var(--paper-line);
+            color: var(--paper-muted);
+        }
+        #sticky-preview blockquote p { margin: 4px 0; }
+        #sticky-preview hr {
+            margin: 12px 0;
+            border: none;
+            border-top: 1px solid var(--paper-line);
+        }
+        #sticky-preview table {
+            width: 100%;
+            margin: 8px 0;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        #sticky-preview th,
+        #sticky-preview td {
+            padding: 4px 6px;
+            border: 1px solid var(--paper-line);
+            text-align: left;
+        }
+        #sticky-preview input[type="checkbox"] {
+            margin-right: 4px;
+            accent-color: var(--accent);
+        }
+
+        /* 只读：不进编辑，内容仍可选中复制 */
+        .sticky-container.readonly #sticky-preview { cursor: default; }
+
+        /* 提示：没有底栏，保存失败与只读原因改用一张短暂浮起的小纸条说明 */
+        .sticky-hint {
+            position: absolute;
+            left: 12px;
+            right: 12px;
+            bottom: 10px;
+            z-index: 20;
+            padding: 6px 10px;
+            border-radius: var(--radius-sm);
+            background-color: var(--paper-ink);
+            color: var(--paper-bg);
+            font-size: 11.5px;
+            line-height: 1.5;
+            opacity: 0;
+            transform: translateY(4px);
+            pointer-events: none;
+            transition: opacity 0.16s ease-out, transform 0.16s ease-out;
+        }
+        .sticky-hint.show {
+            opacity: 0.93;
+            transform: none;
+        }
+        /* 保存失败、只读这类需要留意一句的提示用醒目底色 */
+        .sticky-hint.error {
+            background-color: var(--danger);
+            color: #ffffff;
+        }
+
+        /* 色板：点圆点后在标题栏里向右展开（此时标题收起）。
+           clip-path 从「右侧全裁掉」推到「完整显示」，看上去就是从圆点往右摊开；
+           margin-right: auto 让色块紧贴左侧，余下的空白留给拖动窗口 */
+        .sticky-colors {
+            flex: 0 1 auto;
+            min-width: 0;
+            overflow: hidden;
+            margin-right: auto;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            height: 100%;
+            padding: 0 8px;
+            -webkit-app-region: no-drag;
+        }
+        .sticky-colors:not(.hidden) {
+            animation: stickyColorsUnfold 0.2s ease-out both;
+        }
+        @keyframes stickyColorsUnfold {
+            from { clip-path: inset(0 100% 0 0); opacity: 0; }
+            to { clip-path: inset(0 0 0 0); opacity: 1; }
+        }
+        .sticky-color-swatch {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+            border-radius: 50%;
+            background-color: hsl(var(--swatch-hue) 62% 58%);
+            box-shadow: 0 0 0 1px hsl(var(--swatch-hue) 40% 45% / 0.35);
+            transition: transform 0.12s, box-shadow 0.12s;
+        }
+        .sticky-color-swatch:hover { transform: scale(1.12); }
+        .sticky-color-swatch.active {
+            box-shadow: 0 0 0 2px var(--paper-bg), 0 0 0 3px var(--paper-ink);
+        }
+
+        /* 右键菜单：贴在指针位置的小浮层。标题栏上没有关闭按钮，关闭走这里，
+           桌面右键菜单里也有一条同样的事（见 main/desktop_menu.js） */
+        .sticky-menu {
+            position: absolute;
+            z-index: 25;
+            min-width: 132px;
+            padding: 4px;
+            border: 1px solid var(--paper-line);
+            border-radius: var(--radius-md);
+            background-color: var(--paper-bg);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+        .sticky-menu-item {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: var(--radius-sm);
+            color: var(--paper-ink);
+            font-family: inherit;
+            font-size: 12px;
+            text-align: left;
+        }
+        .sticky-menu-item:hover { background-color: var(--paper-hover); }
+    </style>
+</head>
+<body data-sticky-color="yellow">
+    <div class="sticky-container" id="sticky-root">
+        <header class="titlebar" id="sticky-titlebar">
+            <!-- 纸张颜色：圆点本身就是入口，点开是六色色板 -->
+            <button class="sticky-color-btn" id="sticky-color-btn" title="纸张颜色">
+                <span class="sticky-dot" id="sticky-dot"></span>
+            </button>
+            <!-- 待办完成勾选：只有绑定待办时才排出来 -->
+            <label class="sticky-done hidden" id="sticky-done-row" title="标记完成">
+                <input type="checkbox" id="sticky-done">
+            </label>
+            <!-- 标题就在标题栏：预览态是文本（整条标题栏都能拖窗口），编辑态才成为输入框 -->
+            <input type="text" id="sticky-title" placeholder="标题" spellcheck="false">
+            <!-- 色板：点圆点后在标题位置向右展开（此时标题收起），由脚本切显隐 -->
+            <div class="sticky-colors hidden" id="sticky-colors"></div>
+            <!-- 编辑态下标题输入占满中段，留一小段拖动区，免得进了编辑就搬不动窗口 -->
+            <div class="sticky-grip"></div>
+            <div class="window-controls">
+                <button class="win-btn" id="sticky-edit" title="编辑">
+                    <span class="ms-icon xs">edit</span>
+                </button>
+            </div>
+        </header>
+
+        <div class="sticky-body">
+            <!-- 预览：默认就是这一面，点标题栏的编辑按钮才进编辑 -->
+            <div id="sticky-preview"></div>
+            <textarea id="sticky-content" class="hidden" placeholder="写点什么…" spellcheck="false"></textarea>
+        </div>
+
+        <!-- 提示：没有底栏，保存失败与只读原因以短暂浮层说明 -->
+        <div class="sticky-hint" id="sticky-hint"></div>
+
+        <!-- 右键菜单：关闭按钮已从标题栏去掉，关闭走这里 -->
+        <div class="sticky-menu hidden" id="sticky-menu">
+            <button class="sticky-menu-item" id="sticky-menu-close">
+                <span class="ms-icon xs">delete</span>
+                <span>关闭并移除</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- 预览用同一份轻量 Markdown 渲染器（scripts/markdown.js 的 marked） -->
+    <script src="./scripts/markdown.js"></script>
+    <script src="./scripts/sticky_window.js"></script>
+</body>
+</html>

@@ -31,6 +31,7 @@ window.onload = () => {
     State.ghProxyEnabled = saved.ghProxyEnabled === true;
     State.autoLaunch = saved.autoLaunch === true;
     State.trayEnabled = saved.trayEnabled !== false;
+    State.stickyNotes = normalizeStickyConfig(saved.stickyNotes);
     State.fonts = normalizeFonts(saved.fonts);
     State.ai = normalizeAiConfig(saved.ai);
     // 随口记（语音转文本）：默认只走本机离线识别，联网要靠设置里的显式开关
@@ -109,6 +110,8 @@ window.onload = () => {
     initUpdateSettings();
     initTraySettings();
     initAutoLaunchSettings();
+    // 桌面便利贴：标题栏入口、设置分区与条目桥接（详见 scripts/sticky_notes.js）
+    initStickyNoteSettings();
 
     // 启动时不自动打开任何标签页：停留在空状态，由用户自行选择、新建笔记或待办
     State.openNoteIds = [];

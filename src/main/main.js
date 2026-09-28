@@ -16,7 +16,27 @@ const {
 } = require('./data_path.js');
 const { listSystemFonts } = require('./font_list.js');
 const { configureDialogWindows, registerDialogIpc, showDialogWindow } = require('./dialog_window.js');
+const { disposeDesktopLayer } = require('./desktop_layer.js');
+const {
+  configureDesktopMenu,
+  handleDesktopMenuArgv,
+  registerDesktopMenu,
+  unregisterDesktopMenu
+} = require('./desktop_menu.js');
 const { configureScratchpadWindow, isScratchpadWindowOpen, openScratchpadWindow, registerScratchpadIpc } = require('./scratchpad_window.js');
+const {
+  configureStickyNotes,
+  closeStickyNote,
+  createStickyNote,
+  hideAllStickyNotes,
+  isStickyNoteOpen,
+  listStickyNotes,
+  registerStickyNotesIpc,
+  releaseStickyNotes,
+  restoreStickyNotes,
+  revealStickyNote,
+  showAllStickyNotes
+} = require('./sticky_notes.js');
 const { buildWindowAppearance } = require('./window_appearance.js');
 const { configureTray, isTrayEnabled, registerTrayIpc } = require('./tray.js');
 const { configureAutoLaunch, registerAutoLaunchIpc } = require('./auto_launch.js');
@@ -230,6 +250,34 @@ configureScratchpadWindow({
   onClosed: handleScratchpadClosed
 });
 
+// 桌面便利贴（把笔记 / 待办贴到桌面上的一组小窗口，位于所有窗口之下的桌面层）：
+// 记录随数据目录一起走，总开关与默认颜色从 config.json 读取
+configureStickyNotes({
+  getTheme: resolveEffectiveTheme,
+  getStyle: resolveThemeStyle,
+  getAccent: resolveAccentColor,
+  getRadius: resolveCornerRadius,
+  getFonts: resolveWindowFonts,
+  getDataDir: resolveDataDir,
+  getConfig: readUserConfig,
+  // 新便利贴贴在哪块屏幕，取决于主窗口当前所在的显示器
+  getOwner: () => mainWindow,
+  icon: APP_ICON_PATH,
+  // 便利贴最后一张也关掉后：主窗口此前已被收起时，屏幕上再无窗口，应用随之退出
+  onClosed: handleStickyNoteClosed
+});
+
+/* 桌面右键菜单（桌面空白处右键 → 「EsprinNemo 便利贴」）：
+   注册表项的增删在 desktop_menu.js，这里只提供菜单要的那几件事——
+   当前便利贴清单、菜单项被点击时该做什么，以及菜单图标要用哪份资源
+   （shell 只认 .ico / exe / dll，模块会把这份 PNG 现拼成一个 .ico）。
+   应用退出时整个菜单树删除。 */
+configureDesktopMenu({
+  getItems: listStickyNotes,
+  onAction: handleStickyMenuAction,
+  icon: APP_ICON_PATH
+});
+
 // AI 助手：站点与模型随数据目录存放，API Key 由系统密钥链单独保管；两者都只由主进程读取
 configureAiService({ getDataDir: resolveDataDir });
 
@@ -275,13 +323,32 @@ function setupTray() {
     getOwner: () => mainWindow,
     icon: APP_ICON_PATH,
     onShowMainWindow: showMainWindow,
-    // 小本本与退出都在主进程内直接完成，不经过渲染进程
+    // 小本本、桌面便利贴与退出都在主进程内直接完成，不经过渲染进程
     onOpenScratchpad: openScratchpadWindow,
+    onNewStickyNote: () => { createStickyNote({ kind: 'free' }); },
+    onShowStickyNotes: showAllStickyNotes,
+    onHideStickyNotes: hideAllStickyNotes,
     onQuit: () => { app.quit(); },
     // 关掉托盘后应用失去唯一的常驻入口：此时没有任何可见窗口就应当退出，
     // 否则进程会留在后台且再也唤不回来
     onEnabledChanged: (enabled) => { if (!enabled) quitIfNoVisibleWindow(); }
   });
+}
+
+// 桌面右键菜单的动作：动作名与 desktop_menu.js 里拼命令行时用的标识一一对应
+function handleStickyMenuAction(action, id) {
+  if (action === 'pick' || action === 'new') {
+    const win = showMainWindow();
+    if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send('tray:action', 'pick-sticky-note');
+    }
+    return true;
+  }
+  if (action === 'show') return revealStickyNote(id);
+  if (action === 'close') return closeStickyNote(id);
+  if (action === 'show-all') return showAllStickyNotes();
+  if (action === 'hide-all') return hideAllStickyNotes();
+  return null;
 }
 
 // 把主窗口叫回前台：托盘菜单、托盘动作与「再次启动应用」都走这里。
@@ -297,11 +364,11 @@ function showMainWindow() {
   return mainWindow;
 }
 
-// 关闭托盘且屏幕上已无可见窗口（主窗口被收起、小本本也没开）时退出应用：
+// 关闭托盘且屏幕上已无可见窗口（主窗口被收起、小本本与便利贴也没开）时退出应用：
 // 此时应用没有任何入口，继续驻留只会变成一个无法唤回的残留进程。
 function quitIfNoVisibleWindow() {
   if (isQuitting || isTrayEnabled()) return;
-  if (isScratchpadWindowOpen()) return;
+  if (isScratchpadWindowOpen() || isStickyNoteOpen()) return;
   if (mainWindow && !mainWindow.isDestroyed() && !mainWindowClosed) return;
   app.quit();
 }
@@ -311,6 +378,17 @@ function quitIfNoVisibleWindow() {
 function handleScratchpadClosed() {
   if (isQuitting) return;
   if (isTrayEnabled()) return;
+  // 还有便利贴贴在桌面上时，应用同样继续运行
+  if (isStickyNoteOpen()) return;
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindowClosed) return;
+  app.quit();
+}
+
+// 最后一张便利贴关闭或收起后：与上面同一套去留判定
+function handleStickyNoteClosed() {
+  if (isQuitting) return;
+  if (isTrayEnabled()) return;
+  if (isScratchpadWindowOpen()) return;
   if (mainWindow && !mainWindow.isDestroyed() && !mainWindowClosed) return;
   app.quit();
 }
@@ -850,12 +928,12 @@ function createWindow() {
   });
 
   // 关闭主窗口：托盘开启时一律收进托盘（图标就是重新打开界面的入口）；
-  // 托盘关闭、但小本本还开着时同样只收起——渲染进程继续存活，笔记读写与小本本的
-  // 联动（列表 / 打开 / 保存）都不受影响，小本本得以单独留在屏幕上继续记事。
+  // 托盘关闭、但小本本或桌面便利贴还开着时同样只收起——渲染进程继续存活，笔记读写与小本本的
+  // 联动（列表 / 打开 / 保存）以及便利贴的写回都不受影响。
   // 两者都不成立时保持原样：关闭主窗口即退出应用。
   win.on('close', (event) => {
     if (isQuitting) return;
-    if (!isTrayEnabled() && !isScratchpadWindowOpen()) return;
+    if (!isTrayEnabled() && !isScratchpadWindowOpen() && !isStickyNoteOpen()) return;
     event.preventDefault();
     mainWindowClosed = true;
     win.hide();
@@ -899,9 +977,12 @@ let startupReady = false;
 // 单实例锁的既有实例被再次启动时：把已有的主窗口带到前台。
 // 主窗口此前被收起（小本本仍在运行或应用已缩进托盘）时，
 // 这里就是「重新打开应用」的入口——只显示那扇已存在的主窗口，不再启动新进程。
-app.on('second-instance', () => {
+app.on('second-instance', (event, argv) => {
   // 正在退出（例如安装更新时）就不要再开窗口了
-  if (isQuitting) return;
+  if (isQuitting || startupBlocked) return;
+  /* 桌面右键菜单发来的动作：直接执行，不把主窗口叫到前台——
+     用户点的是便利贴，不是「打开应用」 */
+  if (handleDesktopMenuArgv(argv)) return;
   /* 启动流程还没走完（窗口尚未创建）：接下来那一步自然会把它显示出来，
      这里再调一次 showMainWindow 只会另开一扇窗口 */
   if (!startupReady) return;
@@ -974,6 +1055,9 @@ app.whenReady().then(async () => {
   // 小本本窗口的 IPC 通道（打开 / 读写内容 / 外观同步）
   registerScratchpadIpc();
 
+  // 桌面便利贴的 IPC 通道（新建 / 显示与收起 / 条目读写桥接）
+  registerStickyNotesIpc();
+
   // 系统托盘：设置页开关。应用已就绪，托盘图标同时按配置在此落定，
   // 因此主窗口创建时的关闭拦截已经能读到正确的托盘状态。
   registerTrayIpc();
@@ -1036,6 +1120,19 @@ app.whenReady().then(async () => {
     return;
   }
   startupReady = true;
+
+  /* 把上次留在桌面上的便利贴重新贴出来：必须在主窗口建好之后，
+     便利贴取条目内容要经主窗口渲染进程（见 sticky_notes.js 的桥接）。
+     单实例锁的 second-instance 与托盘入口都不依赖这一步，失败不影响其余功能。 */
+  runStartupStep('桌面便利贴', () => restoreStickyNotes());
+
+  /* 桌面右键菜单：菜单里要点名的便利贴此刻已经就位，注册出来就是完整的清单。
+     顺带消费本次启动带着的菜单动作——从桌面右键菜单里启动应用就是这种情况。 */
+  runStartupStep('桌面右键菜单', () => {
+    registerDesktopMenu();
+    handleDesktopMenuArgv(process.argv);
+  });
+
   if (!IS_PORTABLE_RUN) scheduleAutoChecks();
 });
 
@@ -1044,6 +1141,16 @@ app.on('before-quit', () => {
   isQuitting = true;
   // 随口记的识别进程跟着一起收掉，别在系统里留下一个仍占着麦克风的 PowerShell
   disposeSpeechWindows();
+  // 便利贴的置底辅助进程同样收掉，别在系统里留下一个等 stdin 的 PowerShell；
+  // 同时放行便利贴窗口的关闭（未放行时关闭会被拦下、推回界面走「关闭并移除」）
+  disposeDesktopLayer();
+  releaseStickyNotes();
+});
+
+/* 退出时删掉桌面右键菜单的注册表项：菜单指向的是本机应用，
+   应用不在时留着它没有意义（下次启动会重新写回去）。 */
+app.on('will-quit', () => {
+  unregisterDesktopMenu();
 });
 
 app.on('window-all-closed', () => {

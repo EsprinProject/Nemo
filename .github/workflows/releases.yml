@@ -76,7 +76,7 @@ jobs:
         id: release_notes
         shell: bash
         env:
-          AI_RELEASE: ${{ secrets.AI_RELEASE }}
+          AI_RELEASE: ${{ secrets.AI_Release }}
         run: |
           echo "收集 git 提交历史..."
           LAST_TAG=$(git describe --tags --abbrev=0 "${{ github.sha }}^" 2>/dev/null || echo "")

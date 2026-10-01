@@ -1,7 +1,8 @@
 /* 主题色（强调色）个性化：预设色板、自定义取色，并把派生色写入 CSS 变量 */
 
-// 预设色板：空字符串表示"跟随主题"，使用样式表中内置的默认强调色
+// 预设色板：'system' 表示"跟随系统主题色"（默认），空字符串表示"跟随主题"，使用系统或样式表中内置的默认强调色
 const ACCENT_PRESETS = [
+    { name: '跟随系统', value: 'system' },
     { name: '跟随主题', value: '' },
     { name: '天际蓝', value: '#58A6FF' },
     { name: '海洋蓝', value: '#0969DA' },
@@ -27,21 +28,59 @@ const ACCENT_BG_ALPHA_LIGHT = 0.1;
 // 接受 #RGB / #RRGGBB，井号可省略
 const ACCENT_HEX_PATTERN = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
-// 规范化主题色：统一为 #RRGGBB 大写形式；非法值返回空字符串（表示跟随主题）
+// 规范化主题色：统一为 #RRGGBB 大写形式、'system' 或 ''；非法或未传值默认返回 'system'（表示跟随系统主题色）
 function normalizeAccentColor(value) {
-    if (typeof value !== 'string') return '';
-    const matched = value.trim().match(ACCENT_HEX_PATTERN);
-    if (!matched) return '';
+    if (value === undefined || value === null) return 'system';
+    if (typeof value !== 'string') return 'system';
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    if (trimmed.toLowerCase() === 'system') return 'system';
+    const matched = trimmed.match(ACCENT_HEX_PATTERN);
+    if (!matched) return 'system';
     let hex = matched[1];
     // #ABC 展开为 #AABBCC
     if (hex.length === 3) hex = hex.split('').map(char => char + char).join('');
     return `#${hex.toUpperCase()}`;
 }
 
+// 缓存最近获取到的系统主题色（#RRGGBB）
+let cachedSystemAccentColor = '';
+
+// 获取当前系统的主题色（同步或异步更新缓存）
+function fetchSystemAccentColor() {
+    try {
+        const { systemPreferences } = require('electron');
+        if (systemPreferences && typeof systemPreferences.getAccentColor === 'function') {
+            const raw = systemPreferences.getAccentColor();
+            if (typeof raw === 'string' && raw.length >= 6) {
+                cachedSystemAccentColor = `#${raw.slice(0, 6).toUpperCase()}`;
+                return cachedSystemAccentColor;
+            }
+        }
+    } catch (e) {}
+    try {
+        const color = ipcRenderer.sendSync('system:get-accent-color-sync');
+        if (typeof color === 'string' && color) {
+            cachedSystemAccentColor = color;
+            return color;
+        }
+    } catch (e) {}
+    return cachedSystemAccentColor || '';
+}
+
+// 获取生效的十六进制颜色（如果是 system 则折算为系统真实色）
+function resolveAccentHex(value) {
+    const norm = normalizeAccentColor(value);
+    if (norm === 'system') {
+        return fetchSystemAccentColor();
+    }
+    return norm;
+}
+
 // #RRGGBB -> { r, g, b }，非法输入返回 null
 function accentColorToRgb(hex) {
-    const normalized = normalizeAccentColor(hex);
-    if (!normalized) return null;
+    const normalized = resolveAccentHex(hex);
+    if (!normalized || normalized === 'system') return null;
     return {
         r: parseInt(normalized.slice(1, 3), 16),
         g: parseInt(normalized.slice(3, 5), 16),
@@ -64,7 +103,7 @@ function isLightThemeActive() {
 // 写入 CSS 变量；未设置主题色时移除内联覆盖，回落到样式表中的默认强调色
 function applyAccentColor() {
     const rootStyle = document.documentElement.style;
-    const hex = normalizeAccentColor(State.accentColor);
+    const hex = resolveAccentHex(State.accentColor);
     if (!hex) {
         rootStyle.removeProperty('--accent');
         rootStyle.removeProperty('--accent-bg');
@@ -81,7 +120,7 @@ function applyAccentColor() {
 // 生效的强调色：未自定义时取当前明暗主题与界面风格的默认值，仅用于预览与色板选中判断
 // （未自定义时真实颜色由 CSS 变量兜底：默认风格取 tokens.css，Alom 取 alom.css，魔幻取 magic_style.css）
 function currentAccentColor() {
-    const custom = normalizeAccentColor(State.accentColor);
+    const custom = resolveAccentHex(State.accentColor);
     if (custom) return custom;
     const style = normalizeThemeStyle(State.themeStyle);
     const light = isLightThemeActive();
@@ -100,9 +139,17 @@ function buildAccentSwatches() {
         swatch.type = 'button';
         swatch.className = 'accent-swatch';
         swatch.dataset.accent = preset.value;
-        swatch.title = preset.value ? `${preset.name}（${preset.value}）` : preset.name;
+        swatch.title = preset.value && preset.value !== 'system' ? `${preset.name}（${preset.value}）` : preset.name;
         swatch.setAttribute('aria-label', swatch.title);
-        if (preset.value) {
+        if (preset.value === 'system') {
+            swatch.classList.add('accent-swatch-system');
+            const sysColor = fetchSystemAccentColor();
+            if (sysColor) {
+                swatch.style.setProperty('--swatch-color', sysColor);
+                swatch.title = `${preset.name}（${sysColor}）`;
+                swatch.setAttribute('aria-label', swatch.title);
+            }
+        } else if (preset.value) {
             swatch.style.setProperty('--swatch-color', preset.value);
         } else {
             // 默认色块：用明暗两种默认蓝的对角渐变表示"跟随主题"
@@ -119,10 +166,17 @@ function syncAccentControls(options = {}) {
     const effective = currentAccentColor();
 
     document.querySelectorAll('#accent-swatches .accent-swatch').forEach((swatch) => {
-        const value = normalizeAccentColor(swatch.dataset.accent) || '';
-        const selected = value ? value === custom : !custom;
+        const value = swatch.dataset.accent;
+        const selected = value === custom;
         swatch.classList.toggle('selected', selected);
         swatch.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        if (value === 'system') {
+            const sysColor = fetchSystemAccentColor();
+            if (sysColor) {
+                swatch.style.setProperty('--swatch-color', sysColor);
+                swatch.title = `跟随系统（${sysColor}）`;
+            }
+        }
     });
 
     // 系统取色器打开期间不回写颜色输入框，避免打断用户正在进行的拖动
@@ -130,7 +184,9 @@ function syncAccentControls(options = {}) {
     if (colorInput && !options.skipColorInput) colorInput.value = effective;
 
     const hexInput = document.getElementById('accent-hex-input');
-    if (hexInput && document.activeElement !== hexInput) hexInput.value = custom || '';
+    if (hexInput && document.activeElement !== hexInput) {
+        hexInput.value = custom === 'system' ? 'system' : (custom || '');
+    }
 }
 
 // 设置主题色：State、CSS 变量与控件同步刷新，并写入 config.json
@@ -153,12 +209,17 @@ function previewAccentColor(value) {
 function commitAccentHexInput() {
     const hexInput = document.getElementById('accent-hex-input');
     if (!hexInput) return;
-    const normalized = normalizeAccentColor(hexInput.value);
-    if (normalized || !hexInput.value.trim()) {
+    const raw = hexInput.value.trim();
+    if (raw.toLowerCase() === 'system') {
+        setAccentColor('system');
+        return;
+    }
+    const normalized = normalizeAccentColor(raw);
+    if (normalized || !raw) {
         setAccentColor(normalized);
         return;
     }
-    showToast('颜色格式不正确，请使用 #RRGGBB 或 #RGB');
+    showToast('颜色格式不正确，请使用 #RRGGBB、#RGB 或 system');
     syncAccentControls();
 }
 
@@ -175,8 +236,13 @@ function initAccentColor() {
     const hexInput = document.getElementById('accent-hex-input');
     if (hexInput) {
         hexInput.oninput = (e) => {
-            const normalized = normalizeAccentColor(e.target.value);
-            if (normalized) previewAccentColor(normalized);
+            const val = e.target.value.trim();
+            if (val.toLowerCase() === 'system') {
+                previewAccentColor('system');
+            } else {
+                const normalized = normalizeAccentColor(val);
+                if (normalized) previewAccentColor(normalized);
+            }
         };
         // 失焦或回车时提交：内容为空视为恢复默认，格式非法则保留原值并提示
         hexInput.onchange = commitAccentHexInput;
@@ -187,6 +253,21 @@ function initAccentColor() {
 
     const applyBtn = document.getElementById('btn-accent-apply');
     if (applyBtn) applyBtn.onclick = commitAccentHexInput;
+
+    // 监听主进程发来的系统主题色变更通知
+    try {
+        ipcRenderer.on('system:accent-color-changed', (event, newColor) => {
+            cachedSystemAccentColor = newColor;
+            if (State.accentColor === 'system') {
+                applyAccentColor();
+                syncAccentControls();
+                syncScratchpadAppearance();
+            } else {
+                // 更新色板上系统颜色色块的展示
+                syncAccentControls();
+            }
+        });
+    } catch (e) {}
 
     // 首屏已由 boot.js 同步注入过一次，这里再同步一次以兜底
     applyAccentColor();

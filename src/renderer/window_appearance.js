@@ -83,20 +83,8 @@
 
     // 主题色（强调色）：派生浅底与底上文字色；空值或格式非法时移除内联覆盖，回落到样式表默认色
     function applyAccent(value) {
-        let accentValue = value;
-        if (typeof accentValue === 'string' && accentValue.trim().toLowerCase() === 'system') {
-            try {
-                const { systemPreferences } = require('electron');
-                if (systemPreferences && typeof systemPreferences.getAccentColor === 'function') {
-                    const raw = systemPreferences.getAccentColor();
-                    if (typeof raw === 'string' && raw.length >= 6) {
-                        accentValue = '#' + raw.slice(0, 6);
-                    }
-                }
-            } catch (e) {}
-        }
         const rootStyle = document.documentElement.style;
-        const matched = String(accentValue == null ? '' : accentValue).trim().match(HEX_PATTERN);
+        const matched = String(value == null ? '' : value).trim().match(HEX_PATTERN);
         if (!matched) {
             rootStyle.removeProperty('--accent');
             rootStyle.removeProperty('--accent-bg');

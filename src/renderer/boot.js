@@ -68,7 +68,7 @@ try {
     const configPath = path.join(resolveDataDir(), 'config.json');
     let theme = 'system';
     let fonts = null;
-    let accentColor = 'system';
+    let accentColor = '';
     let themeStyle = 'default';
     let brandColor = 'brand';
     let cornerRadius = 'default';

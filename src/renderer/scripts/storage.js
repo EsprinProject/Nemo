@@ -8,8 +8,10 @@
 
 // 数据目录可在设置页中更改，因此路径均为可变变量（切换位置后就地生效，无需重启）
 let DATA_DIR = resolveDataDir();
+let ITEMS_DIR = path.join(DATA_DIR, 'items');
 let NOTES_DIR = path.join(DATA_DIR, 'notes');
 let TODOS_DIR = path.join(DATA_DIR, 'todos');
+let ASSETS_DIR = path.join(DATA_DIR, 'assets');
 let AI_CHATS_DIR = path.join(DATA_DIR, 'ai_chats');
 let SHARED_DIR = path.join(DATA_DIR, 'shared');
 let CONFIG_FILE = path.join(DATA_DIR, 'config.json');
@@ -18,14 +20,14 @@ let LEGACY_INDEX_FILE = path.join(DATA_DIR, 'index.json');
 let LEGACY_AI_CHATS_FILE = path.join(DATA_DIR, 'ai_chats.json');
 
 // 写入缓存：待写入内容与上次落盘完全一致时直接跳过，避免自动保存产生重复 I/O
-const savedNoteFiles = new Map(); // noteId -> 已写入磁盘的完整文件内容（注释 + 正文）
-const savedTodoFiles = new Map(); // todoId -> 已写入磁盘的完整文件内容（注释 + 正文）
+const savedItemFiles = new Map(); // itemId -> 已写入磁盘的完整文件内容（注释 + 正文）
+const savedNoteFiles = savedItemFiles; // 兼容旧引用
+const savedTodoFiles = savedItemFiles; // 兼容旧引用
 const savedAiChatFiles = new Map(); // chatId -> 已写入磁盘的对话 JSON
 let savedConfigJSON = null;
 
 function resetWriteCache() {
-    savedNoteFiles.clear();
-    savedTodoFiles.clear();
+    savedItemFiles.clear();
     savedAiChatFiles.clear();
     savedConfigJSON = null;
 }
@@ -33,8 +35,10 @@ function resetWriteCache() {
 // 应用新的数据目录（主进程已完成校验/迁移/记录，这里只负责切换本进程使用的路径）
 function setDataPaths(dir) {
     DATA_DIR = dir;
+    ITEMS_DIR = path.join(dir, 'items');
     NOTES_DIR = path.join(dir, 'notes');
     TODOS_DIR = path.join(dir, 'todos');
+    ASSETS_DIR = path.join(dir, 'assets');
     AI_CHATS_DIR = path.join(dir, 'ai_chats');
     SHARED_DIR = path.join(dir, 'shared');
     CONFIG_FILE = path.join(dir, 'config.json');
@@ -55,12 +59,13 @@ function generateNoteId() {
     return result;
 }
 
-// 这个 id 是不是还有人在用：内存里的条目与磁盘上的 notes/、todos/ 文件都算
-// （笔记与待办共用同一套 id 空间，两边的文件都要避开）
+// 这个 id 是不是还有人在用：内存里的条目与磁盘上的 items/、notes/、todos/ 文件都算
 function itemIdTaken(id) {
     if (!id) return true;
     if (State.notes.some(n => n.id === id) || State.todos.some(t => t.id === id)) return true;
-    return fs.existsSync(path.join(NOTES_DIR, `${id}.md`)) || fs.existsSync(path.join(TODOS_DIR, `${id}.md`));
+    return fs.existsSync(path.join(ITEMS_DIR, `${id}.md`))
+        || fs.existsSync(path.join(NOTES_DIR, `${id}.md`))
+        || fs.existsSync(path.join(TODOS_DIR, `${id}.md`));
 }
 
 // 生成唯一的条目 id：优先用服务端回收池里腾出来的 ID（被删掉的那一条腾出的 ID
@@ -82,8 +87,8 @@ function ensureStorageDirs() {
     if (storageDirsReady) return;
     try {
         fs.mkdirSync(DATA_DIR, { recursive: true });
-        fs.mkdirSync(NOTES_DIR, { recursive: true });
-        fs.mkdirSync(TODOS_DIR, { recursive: true });
+        fs.mkdirSync(ITEMS_DIR, { recursive: true });
+        fs.mkdirSync(ASSETS_DIR, { recursive: true });
         fs.mkdirSync(AI_CHATS_DIR, { recursive: true });
         storageDirsReady = true;
     } catch (err) {
@@ -251,20 +256,20 @@ function formatNoteMetaLine(key, value) {
 }
 
 // 生成条目文件内容：元数据注释 + 空行 + 正文（正文为空时只留注释）。
+// kind: 'note' | 'todo'，写入 type: "note" 或 type: "todo"
 // extraLines 用于笔记之外的附加字段（待办的 isDone），写法与其余元数据行保持一致。
-function serializeItemFile(item, extraLines = []) {
+function serializeItemFile(item, kind = 'note', extraLines = []) {
     const folder = item.folder && item.folder !== '默认' ? item.folder : '';
+    const itemType = kind || (item && item.isDone !== undefined ? 'todo' : 'note');
     const header = [
         `<!--${NOTE_META_HEADER}`,
+        formatNoteMetaLine('type', itemType),
         formatNoteMetaLine('title', item.title || ''),
         formatNoteMetaLine('folder', folder),
         formatNoteMetaLine('tags', Array.isArray(item.tags) ? item.tags : []),
         formatNoteMetaLine('isPinned', !!item.isPinned),
         formatNoteMetaLine('isTrashed', !!item.isTrashed),
-        // 秘密本：隐藏与加密状态。只在这两项确实成立时才写出对应行——
-        // 没用过秘密本的条目因此保持原有文件内容（省掉一次全量重写与随之而来的同步推送）；
-        // 解密用的盐与 IV 跟在密文里（见 scripts/secret.js 的信封），
-        // 元数据里只记「有没有加密」，文件一开头就能判断要不要先问密码
+        // 秘密本：隐藏与加密状态。只在这两项确实成立时才写出对应行
         ...(item.isHidden === true ? [formatNoteMetaLine('isHidden', true)] : []),
         ...(item.locked === true ? [formatNoteMetaLine('isLocked', true)] : []),
         ...extraLines,
@@ -280,14 +285,14 @@ function serializeItemFile(item, extraLines = []) {
     return content ? `${header}\n\n${content}` : `${header}\n`;
 }
 
-// 笔记文件：只有上面那几个通用字段
+// 笔记文件
 function serializeNoteFile(note) {
-    return serializeItemFile(note);
+    return serializeItemFile(note, 'note');
 }
 
-// 待办文件：与笔记完全同一套格式，仅多一行完成状态
+// 待办文件
 function serializeTodoFile(todo) {
-    return serializeItemFile(todo, [formatNoteMetaLine('isDone', !!todo.isDone)]);
+    return serializeItemFile(todo, 'todo', [formatNoteMetaLine('isDone', !!todo.isDone)]);
 }
 
 // 注释里的字符串：优先按 JSON 字符串解析（写入时即为该格式），其次按原文，空值返回空字符串
@@ -366,7 +371,8 @@ function normalizeCustomFolders(raw) {
     return folders;
 }
 
-// 扫描 notes/ 或 todos/ 目录，逐份读出原始文本并解析内嵌元数据；返回 { files, skipped }
+// 扫描条目目录（items/）或旧版 notes/、todos/ 目录，逐份读出原始文本并解析内嵌元数据；
+// 返回 { files, skipped }
 function readItemFiles(dir, label) {
     const files = [];
     let skipped = 0;
@@ -374,7 +380,8 @@ function readItemFiles(dir, label) {
     try {
         entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch (err) {
-        console.error(`读取${label}目录失败:`, err);
+        // 旧版 notes/、todos/ 在条目统一到 items/ 之后本就不存在，缺目录不算异常
+        if (!err || err.code !== 'ENOENT') console.error(`读取${label}目录失败:`, err);
         return { files, skipped };
     }
 
@@ -418,7 +425,20 @@ function readTodoFiles() {
     return readItemFiles(TODOS_DIR, '待办');
 }
 
-// 以文件内容为主、旧索引记录为辅，拼出一篇完整的笔记
+function readAllItemFiles() {
+    return readItemFiles(ITEMS_DIR, '条目');
+}
+
+// 条目的具体存储位置：共享笔记在 shared/ 下，本地笔记与待办统统在 items/ 下
+function itemFilePath(item) {
+    if (item && item.shared) return sharedItemPath(item.shared.owner, item.shared.noteId);
+    const id = typeof item === 'string' ? item : (item && item.id);
+    return path.join(ITEMS_DIR, `${id}.md`);
+}
+
+function noteFilePath(note) {
+    return itemFilePath(note);
+}
 function buildNoteFromFile(file, legacy) {
     const meta = file.meta || {};
     const fallback = legacy || {};
@@ -538,10 +558,9 @@ function buildSharedNoteFromFile(file) {
     return note;
 }
 
-// 笔记文件的位置：共享过来的在 shared/<所有者 id>/ 下，其余在 notes/ 下
+// 笔记文件的位置：共享过来的在 shared/<所有者 id>/ 下，其余在 items/ 下
 function noteFilePath(note) {
-    if (note.shared) return sharedItemPath(note.shared.owner, note.shared.noteId);
-    return path.join(NOTES_DIR, `${note.id}.md`);
+    return itemFilePath(note);
 }
 
 // 拼出一份完整的待办：文件格式与笔记一致，仅多一个 isDone 完成状态
@@ -1015,7 +1034,7 @@ function readAiKeyStatus() {
 
 function loadData() {
     ensureStorageDirs();
-let config = { theme: 'system', themeStyle: 'default', accentColor: 'system', brandColor: 'brand', cornerRadius: 'default', uiScale: 1, spellcheck: false, uiMode: 'modern', tabsDisabled: false, sidebarCollapsed: false, trashRetentionDays: 0, autoUpdate: true, ghProxyEnabled: false, folders: [], aiActiveChat: '', fonts: {}, ai: {}, voice: {}, syncServer: {} };
+    let config = { theme: 'system', themeStyle: 'default', accentColor: 'system', brandColor: 'brand', cornerRadius: 'default', uiScale: 1, spellcheck: false, uiMode: 'modern', tabsDisabled: false, sidebarCollapsed: false, trashRetentionDays: 0, autoUpdate: true, ghProxyEnabled: false, folders: [], aiActiveChat: '', fonts: {}, ai: {}, voice: {}, syncServer: {} };
 
     // 1. 读取应用配置 config.json（自定义文件夹列表也存在这里）
     try {
@@ -1042,23 +1061,49 @@ let config = { theme: 'system', themeStyle: 'default', accentColor: 'system', br
     adoptLegacyApiKey(config);
     const aiKeyStatus = readAiKeyStatus();
 
-    // 2. 旧版数据兼容：index.json 中的元数据只作为兜底来源，稍后并入各笔记文件并归档
+    // 2. 旧版数据兼容：index.json 中的元数据只作为兜底来源，稍后并入各条目文件并归档
     const legacyIndex = readLegacyIndex();
-
-    // 3. 扫描 notes/，逐篇解析文件内嵌的元数据（文件缺失的旧索引记录等于已删除，自然消失）
-    const scanned = readNoteFiles();
     const legacyEntries = new Map(legacyIndex.notes.map(entry => [entry.id, entry]));
-    const notes = scanned.files.map((file) => {
+
+    // 3. 扫描 items/ 以及旧版 notes/ 与 todos/ 目录
+    const scannedItems = readAllItemFiles();
+    const scannedLegacyNotes = readNoteFiles();
+    const scannedLegacyTodos = readTodoFiles();
+
+    // 合并并去重扫描到的文件记录（items/ 优先）
+    const allScannedFiles = new Map();
+    scannedItems.files.forEach(f => allScannedFiles.set(f.id, { ...f, legacySource: null }));
+    scannedLegacyNotes.files.forEach(f => {
+        if (!allScannedFiles.has(f.id)) {
+            allScannedFiles.set(f.id, { ...f, legacySource: 'notes' });
+        }
+    });
+    scannedLegacyTodos.files.forEach(f => {
+        if (!allScannedFiles.has(f.id)) {
+            allScannedFiles.set(f.id, { ...f, legacySource: 'todos' });
+        }
+    });
+
+    const notes = [];
+    const todos = [];
+
+    allScannedFiles.forEach((file) => {
         const legacy = legacyEntries.get(file.id) || null;
         if (legacy) legacyEntries.delete(file.id);
-        return buildNoteFromFile(file, legacy);
+
+        // 判断条目类型：优先看元数据 type，其次看是否有 isDone 或来自 todos/
+        const metaType = file.meta && typeof file.meta.type === 'string' ? file.meta.type.trim().toLowerCase() : '';
+        const isTodo = metaType === 'todo' || file.legacySource === 'todos' || (file.meta && file.meta.isDone !== undefined);
+
+        if (isTodo) {
+            todos.push(buildTodoFromFile(file));
+        } else {
+            notes.push(buildNoteFromFile(file, legacy));
+        }
     });
+
     // 旧索引里仍有记录、但文件已不在：说明该笔记早已被删除，不再保留任何痕迹
     const vanishedLegacyNotes = legacyEntries.size;
-
-    // 4. 扫描 todos/：与笔记同一套格式（内嵌注释 + 正文，多一行 isDone）
-    const scannedTodos = readTodoFiles();
-    const todos = scannedTodos.files.map(file => buildTodoFromFile(file));
 
     // 4b. 共享笔记：别人共享过来的内容，与服务端的投影路径一一对应
     const scannedShared = readSharedNoteFiles();
@@ -1087,55 +1132,83 @@ let config = { theme: 'system', themeStyle: 'default', accentColor: 'system', br
         if (!todo.folder || !customFolders.includes(todo.folder)) todo.folder = '默认';
     });
 
-    // 7. 与磁盘原文逐字节比对：缺少注释、格式过时或字段脏的笔记就地写回，磁盘因此始终与内存一致
-    const fileById = new Map(scanned.files.map(file => [file.id, file]));
+    // 7. 与磁盘 items/{id}.md 逐字节比对并写回（若来自 notes/ 或 todos/，自动迁移到 items/）
     const serialized = new Map();
     let repairedNotes = 0;
     let rewriteFailed = 0;
     notes.forEach((note) => {
+        // 共享笔记不参与迁移到 items/
+        if (note.shared) return;
         const text = serializeNoteFile(note);
         serialized.set(note.id, text);
-        const file = fileById.get(note.id);
-        if (file && file.raw === text) return;
+        const targetPath = itemFilePath(note);
+        let currentRaw = null;
         try {
-            writeFileAtomic(path.join(NOTES_DIR, `${note.id}.md`), text);
-            repairedNotes++;
-        } catch (err) {
-            console.error(`写入笔记 ${note.id} 失败:`, err);
-            rewriteFailed++;
+            if (fs.existsSync(targetPath)) currentRaw = fs.readFileSync(targetPath, 'utf8');
+        } catch (e) {}
+
+        if (currentRaw !== text) {
+            try {
+                writeFileAtomic(targetPath, text);
+                repairedNotes++;
+            } catch (err) {
+                console.error(`写入笔记 ${note.id} 失败:`, err);
+                rewriteFailed++;
+            }
+        }
+
+        // 迁移清理：如果旧 notes/{id}.md 依然存在且 items/{id}.md 写入成功，清理旧目录下的文件
+        const legacyPath = path.join(NOTES_DIR, `${note.id}.md`);
+        if (fs.existsSync(legacyPath) && fs.existsSync(targetPath)) {
+            try {
+                fs.unlinkSync(legacyPath);
+            } catch (e) {}
         }
     });
 
-    // 8. 元数据都已落到各自的笔记文件，旧索引即可归档（保留 .bak 以便万一回退）
+    // 8. 元数据都已落到各自的文件，旧索引即可归档（保留 .bak 以便万一回退）
     const legacyArchived = (legacyIndex.found && !rewriteFailed)
         ? archiveLegacyFile(LEGACY_INDEX_FILE, '索引迁移：元数据已写入各笔记文件')
         : false;
 
-    // 9. 待办同样与磁盘原文逐字节比对，格式不一致（缺少 isDone 等）就写回
-    const todoFileById = new Map(scannedTodos.files.map(file => [file.id, file]));
+    // 9. 待办同样与磁盘 items/{id}.md 比对并写回，并清理旧 todos/ 文件
     const serializedTodos = new Map();
     let repairedTodos = 0;
     todos.forEach((todo) => {
         const text = serializeTodoFile(todo);
         serializedTodos.set(todo.id, text);
-        const file = todoFileById.get(todo.id);
-        if (file && file.raw === text) return;
+        const targetPath = itemFilePath(todo);
+        let currentRaw = null;
         try {
-            writeFileAtomic(path.join(TODOS_DIR, `${todo.id}.md`), text);
-            repairedTodos++;
-        } catch (err) {
-            console.error(`写入待办 ${todo.id} 失败:`, err);
+            if (fs.existsSync(targetPath)) currentRaw = fs.readFileSync(targetPath, 'utf8');
+        } catch (e) {}
+
+        if (currentRaw !== text) {
+            try {
+                writeFileAtomic(targetPath, text);
+                repairedTodos++;
+            } catch (err) {
+                console.error(`写入待办 ${todo.id} 失败:`, err);
+            }
+        }
+
+        // 迁移清理：如果旧 todos/{id}.md 存在且 items/{id}.md 写入成功，清理旧文件
+        const legacyPath = path.join(TODOS_DIR, `${todo.id}.md`);
+        if (fs.existsSync(legacyPath) && fs.existsSync(targetPath)) {
+            try {
+                fs.unlinkSync(legacyPath);
+            } catch (e) {}
         }
     });
 
     // 写入缓存与磁盘内容对齐，避免紧接着的首次保存重复写盘
     resetWriteCache();
-    notes.forEach(note => savedNoteFiles.set(note.id, serialized.get(note.id)));
-    todos.forEach(todo => savedTodoFiles.set(todo.id, serializedTodos.get(todo.id)));
+    notes.forEach(note => savedItemFiles.set(note.id, serialized.get(note.id)));
+    todos.forEach(todo => savedItemFiles.set(todo.id, serializedTodos.get(todo.id)));
     /* 共享笔记不参与上面的「与磁盘逐字节比对后写回」：那份文件的格式该由所有者那边的客户端
        去修正，接收方照原样读出来就好（写回等于替所有者改笔记，还会平白推一条操作）。
        缓存按规范化后的内容填：格式脏的数据也不会在接收方这边被改写。 */
-    sharedNotes.forEach(note => savedNoteFiles.set(note.id, serializeNoteFile(note)));
+    sharedNotes.forEach(note => savedItemFiles.set(note.id, serializeNoteFile(note)));
 
     // 最近修改的排在前面，与列表默认排序一致
     allNotes.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
@@ -1183,8 +1256,10 @@ let config = { theme: 'system', themeStyle: 'default', accentColor: 'system', br
         dataCleanup: {
             repairedNotes,
             repairedTodos,
-            skippedFiles: scanned.skipped,
-            skippedTodoFiles: scannedTodos.skipped,
+            // 被忽略的非条目文件：条目目录 items/ 与旧版 notes/ 两处扫描的结果相加
+            skippedFiles: scannedItems.skipped + scannedLegacyNotes.skipped,
+            // 旧版 todos/ 目录里的非待办文件；条目本身已统一到 items/，那里计在上一项
+            skippedTodoFiles: scannedLegacyTodos.skipped,
             // 共享目录里被忽略的文件（不是笔记的东西）
             skippedSharedFiles: scannedShared.skipped,
             // 自定义文件夹列表需要写回 config.json 时标记
@@ -1253,19 +1328,18 @@ function saveConfig() {
     }
 }
 
-// 保存单篇笔记：元数据注释与正文一起写回（内容未变时跳过写入）。
-// 共享过来的笔记写回 shared/<所有者 id>/ 下——服务端据此把它算作对所有者那份的修改
+// 保存单篇笔记：写回 items/{id}.md（元数据注释与正文一起写回）
 function saveNote(note) {
     if (!note || !note.id) return;
     ensureStorageDirs();
     try {
         const text = serializeNoteFile(note);
-        if (savedNoteFiles.get(note.id) === text) return;
+        if (savedItemFiles.get(note.id) === text) return;
         const file = noteFilePath(note);
         // 共享笔记的目录以所有者为单位，第一次写入时按需建出来
         fs.mkdirSync(path.dirname(file), { recursive: true });
         writeFileAtomic(file, text);
-        savedNoteFiles.set(note.id, text);
+        savedItemFiles.set(note.id, text);
     } catch (err) {
         console.error(`保存笔记 ${note.id} 失败:`, err);
     }
@@ -1275,16 +1349,21 @@ function saveNote(note) {
    共享笔记的删除不推给服务端：它属于所有者，接收方只能「退出共享」（见 scripts/team_notes.js）；
    服务端也会拒收接收方对投影路径的删除。 */
 function deleteNoteFile(noteId) {
-    savedNoteFiles.delete(noteId);
+    savedItemFiles.delete(noteId);
     // 会话里若还留着这一条的密钥，随文件一起丢掉
     if (typeof forgetSecretKey === 'function') forgetSecretKey(noteId);
     const shared = parseSharedItemId(noteId);
     try {
-        const notePath = shared ? sharedItemPath(shared.owner, shared.noteId) : path.join(NOTES_DIR, `${noteId}.md`);
+        const notePath = shared ? sharedItemPath(shared.owner, shared.noteId) : path.join(ITEMS_DIR, `${noteId}.md`);
         if (fs.existsSync(notePath)) {
             fs.unlinkSync(notePath);
-            // 使用模式：本地删了，服务器上那份也要跟着删
             if (!shared) notifyRemoteDelete(notePath);
+        }
+        // 清理旧目录下的遗留文件（如果有）
+        const legacyNotePath = path.join(NOTES_DIR, `${noteId}.md`);
+        if (fs.existsSync(legacyNotePath)) {
+            fs.unlinkSync(legacyNotePath);
+            if (!shared) notifyRemoteDelete(legacyNotePath);
         }
     } catch (err) {
         console.error(`删除笔记文件 ${noteId}.md 失败:`, err);
@@ -1293,15 +1372,16 @@ function deleteNoteFile(noteId) {
     if (typeof notifyStickyItemRemoved === 'function') notifyStickyItemRemoved(noteId);
 }
 
-// 保存单份待办：写回 data/todos/{id}.md，格式与笔记一致（内容未变时跳过写入）
+// 保存单份待办：写回 data/items/{id}.md，格式与笔记一致（内容未变时跳过写入）
 function saveTodo(todo) {
     if (!todo || !todo.id) return;
     ensureStorageDirs();
     try {
         const text = serializeTodoFile(todo);
-        if (savedTodoFiles.get(todo.id) === text) return;
-        writeFileAtomic(path.join(TODOS_DIR, `${todo.id}.md`), text);
-        savedTodoFiles.set(todo.id, text);
+        if (savedItemFiles.get(todo.id) === text) return;
+        const file = itemFilePath(todo);
+        writeFileAtomic(file, text);
+        savedItemFiles.set(todo.id, text);
     } catch (err) {
         console.error(`保存待办 ${todo.id} 失败:`, err);
     }
@@ -1309,15 +1389,19 @@ function saveTodo(todo) {
 
 // 删除待办文件（元数据与正文同在一份文件，删掉即彻底移除），并同步丢弃写入缓存
 function deleteTodoFile(todoId) {
-    savedTodoFiles.delete(todoId);
+    savedItemFiles.delete(todoId);
     // 会话里若还留着这一条的密钥，随文件一起丢掉
     if (typeof forgetSecretKey === 'function') forgetSecretKey(todoId);
     try {
-        const todoPath = path.join(TODOS_DIR, `${todoId}.md`);
+        const todoPath = path.join(ITEMS_DIR, `${todoId}.md`);
         if (fs.existsSync(todoPath)) {
             fs.unlinkSync(todoPath);
-            // 使用模式：本地删了，服务器上那份也要跟着删
             notifyRemoteDelete(todoPath);
+        }
+        const legacyTodoPath = path.join(TODOS_DIR, `${todoId}.md`);
+        if (fs.existsSync(legacyTodoPath)) {
+            fs.unlinkSync(legacyTodoPath);
+            notifyRemoteDelete(legacyTodoPath);
         }
     } catch (err) {
         console.error(`删除待办文件 ${todoId}.md 失败:`, err);

@@ -53,7 +53,34 @@ function sanitizeLinkUrl(raw) {
     if (!decoded) return '';
     const compact = decoded.replace(LINK_INVISIBLE_PATTERN, '').toLowerCase();
     const scheme = compact.match(LINK_SCHEME_PATTERN);
+    // 允许 http(s), mailto, tel，或站内相对路径（以 assets/、./、/ 或普通文件名开头）
     if (scheme && !SAFE_LINK_SCHEME.test(scheme[0])) return '';
+    return escapeLinkAttribute(decoded);
+}
+
+// 解析并转换图片或媒体资源地址：
+// 若为相对路径（如 assets/xxx.png），转为带有 file:// 协议的真实文件 URL，以便 Chromium 正常展示本地媒体
+function resolveMediaSrc(raw) {
+    const decoded = decodeLinkEntities(raw).trim();
+    if (!decoded) return '';
+    const compact = decoded.replace(LINK_INVISIBLE_PATTERN, '').toLowerCase();
+    const scheme = compact.match(LINK_SCHEME_PATTERN);
+    if (scheme) {
+        if (scheme[0] === 'http:' || scheme[0] === 'https:' || scheme[0] === 'data:' || scheme[0] === 'file:') {
+            return escapeLinkAttribute(decoded);
+        }
+        return '';
+    }
+    // 相对路径
+    if (typeof DATA_DIR !== 'undefined' && DATA_DIR) {
+        try {
+            const cleanPath = decoded.replace(/^\.?\/+/, '');
+            const absPath = path.join(DATA_DIR, cleanPath);
+            return require('url').pathToFileURL(absPath).href;
+        } catch (e) {
+            return escapeLinkAttribute(decoded);
+        }
+    }
     return escapeLinkAttribute(decoded);
 }
 
@@ -166,7 +193,7 @@ const marked = {
         text = text.replace(/(?:<li class="ordered">.*?<\/li>\s*)+/g, '<ol>$&</ol>');
         text = text.replace(/(?:<li>.*?<\/li>\s*|<li class="task-item">.*?<\/li>\s*)+/g, '<ul>$&</ul>');
 
-        // 9. 粗体、斜体、删除线与链接
+        // 9. 粗体、斜体、删除线、图片与链接
         text = text
             .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
             .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -176,11 +203,20 @@ const marked = {
             // 中文不被 \w 覆盖，因此「中文_强调_中文」仍按原来的方式解析
             .replace(/(^|[^\w])_([^_\n]+?)_(?![A-Za-z0-9_])/g, '$1<em>$2</em>')
             .replace(/~~(.+?)~~/g, '<del>$1</del>')
+            // 图片解析：![alt](url)
+            .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
+                const src = resolveMediaSrc(url);
+                const safeAlt = escapeLinkAttribute(alt || '');
+                const rawUrl = escapeLinkAttribute(url || '');
+                return src
+                    ? `<img class="md-image" src="${src}" alt="${safeAlt}" data-src="${rawUrl}" loading="lazy" />`
+                    : safeAlt;
+            })
             // 链接地址先过一遍协议白名单，不放行时只保留链接文字
             .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, url) => {
                 const safeUrl = sanitizeLinkUrl(url);
                 return safeUrl
-                    ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer nofollow">${label}</a>`
+                    ? `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer nofollow" data-raw-href="${escapeLinkAttribute(url)}">${label}</a>`
                     : label;
             });
 

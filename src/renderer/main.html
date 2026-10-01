@@ -320,6 +320,8 @@
                     <button class="fmt-btn" data-fmt="quote" title="引用"><span class="ms-icon sm">format_quote</span></button>
                     <button class="fmt-btn" data-fmt="code" title="代码块"><span class="ms-icon sm">code</span></button>
                     <button class="fmt-btn" data-fmt="hr" title="分割线"><span class="ms-icon sm">horizontal_rule</span></button>
+                    <div class="fmt-divider"></div>
+                    <button class="fmt-btn" id="btn-insert-file" title="插入文件或图片"><span class="ms-icon sm">attach_file</span></button>
                 </div>
 
                 <!-- Note Title Input -->
@@ -464,7 +466,8 @@
                          靠这个按钮回到笔记列表（经典布局下不显示） -->
                     <button class="settings-back" id="btn-settings-back" title="返回笔记列表">
                         <span class="ms-icon xs">arrow_back</span>
-                        <span>返回</span>
+                        <!-- 文字在窄窗口下隐藏，只留图标（见 styles/settings.css 的自适应一段） -->
+                        <span class="settings-back-label">返回</span>
                     </button>
                     <nav class="settings-nav" id="settings-nav" aria-label="设置分类"></nav>
                 </aside>

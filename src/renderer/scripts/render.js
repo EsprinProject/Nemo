@@ -981,9 +981,16 @@ function renderListPanel() {
     container.innerHTML = '';
 
     if (list.length === 0) {
+        /* 有关键字时把搜索词原样写出来：搜索是「标题 + 正文」的匹配，而列表又会
+           先按当前视图（笔记 / 待办 / 文件夹 / 标签 / 废纸篓）筛一遍；
+           只写一句「无匹配内容」很容易被当成搜索没生效，写清搜的是什么、范围在哪更直接。 */
+        const keyword = State.searchQuery.trim();
+        const hint = keyword
+            ? `当前视图内没有包含「${escapeHTML(keyword)}」的笔记或待办`
+            : '无匹配内容';
         container.innerHTML = `
             <div style="text-align: center; padding: 32px 10px; color: var(--text-muted); font-size: 12px;">
-                无匹配内容
+                ${hint}
             </div>
         `;
         return;

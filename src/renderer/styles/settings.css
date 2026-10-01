@@ -8,8 +8,11 @@
     overflow: hidden;
     background-color: var(--bg-editor);
     /* 内容区上方的留白：经典布局里是内容区自己的上内边距，现代布局换成了顶上那条拖动空白
-       （见 styles/mode.css），两处同一个值 */
-    --settings-top-inset: 32px;
+       （见 styles/mode.css），两处同一个值。
+       现代布局取 40px —— 与右上角悬浮按钮组同高：内容区正好从按钮下方起排，
+       滚动时又被裁在这条线以下，右上角因此碰不到那排按钮，
+       内容区也就不必再为空出右上角而丢掉一整列宽度（见 styles/mode.css） */
+    --settings-top-inset: 40px;
 }
 /* 拖动空白：只在现代布局下排出来（经典布局上面有标题栏可拖），样式见 styles/mode.css */
 .settings-drag-band {
@@ -22,6 +25,10 @@
     border-right: 1px solid var(--border-color);
     padding: 10px 8px;
     overflow-y: auto;
+    /* 与首页侧边栏同一个时长（见 styles/sidebar.css 的 .sidebar）：宽度变化时滑过去，
+       不硬切——窄窗口下收成图标条、窗口拉宽后再展开都走这条过渡；
+       图标停在同一列（左右内边距不变），因此整段过程与首页侧边栏收起时一样是「背景收窄」 */
+    transition: width 0.18s ease;
 }
 .settings-nav {
     display: flex;
@@ -748,4 +755,71 @@ input:checked + .slider:before {
 }
 #update-status[data-tone='error'] {
     color: var(--danger);
+}
+
+/* ---------------- 按宽度自适应 ----------------
+   两件事跟着宽度走：
+     1. 内容区足够宽时，当前分类的面板拆成两栏（先左后右、逐行落位）。设置行本身
+        最宽 680px，窗口一大右侧就空着一条，两栏正好把这段空白用起来。
+     2. 窗口过窄时，左侧分类栏收成 48px 图标条（与主侧边栏收起态同一套语言），
+        「返回」留在条顶——也就是窗口最左边的那一格；分类名交给 title 提示。
+   判定用容器查询而不是媒体查询：要量的是「内容区自己还有多宽」、「整个设置页有多宽」，
+   这两个宽度都不等于窗口宽度（要减掉分类栏、内边距，现代布局里还随布局状态变化），
+   拿窗口宽度去推，每改一处布局就得把阀值重算一遍。
+   两个容器各管一段：.settings-view 给分类栏做判定（它不依赖自身内容宽度，
+   所以分类栏收起不会反过来改变它自己 —— 不会形成布局循环），
+   .settings-content 给内容区做判定。 */
+.settings-view {
+    container: settings-view / inline-size;
+}
+.settings-content {
+    container: settings-content / inline-size;
+}
+
+/* 内容区够宽：分类面板排成两栏。分区按内容高度各自落位（align-items: start），
+   不被同一行的另一个分区抻高 */
+@container settings-content (min-width: 1000px) {
+    .settings-panel {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 24px 32px;
+        align-items: start;
+    }
+    /* 分栏之后每栏比原来窄：滑块（固定 220px）跟着收一号，行内的说明文字不至于被挤成一条 */
+    .settings-slider {
+        width: 180px;
+    }
+}
+
+/* 整体过窄：分类栏收成 48px 图标条。
+   数值逐条对齐首页侧边栏的收起态（见 styles/sidebar.css 的 Sidebar Collapsed State）：
+   同宽 48px、同左右内边距 8px、条目同为 7px 8px 且图标与文字之间的间距归零，
+   条目因此仍是「整宽的药丸 + 图标停在同一列」——48px 窄条里 8px + 8px 内边距
+   正好把 16px 图标摆在正中，与首页侧边栏收起后完全同款，不做居中排布的改写 */
+@container settings-view (max-width: 1024px) {
+    .settings-sidebar {
+        width: 48px;
+        padding: 10px 8px;
+    }
+    /* 分类名交给 title 提示 */
+    .settings-back .settings-back-label,
+    .settings-nav-item .settings-nav-label {
+        display: none;
+    }
+    /* 「返回」沿用首页侧边栏收起态里那枚 28×28 方形按钮的做法（现代布局的「新建」）：
+       图标居中，横向由 auto 外边距落在内容宽度正中，与下方分类图标同一条竖线上 */
+    .settings-view .settings-sidebar .settings-back {
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        margin: 0 auto 8px;
+        gap: 0;
+        justify-content: center;
+    }
+    .settings-view .settings-sidebar .settings-nav-item {
+        padding: 7px 8px;
+    }
+    .settings-view .settings-sidebar .settings-nav-item .nav-item-left {
+        gap: 0;
+    }
 }

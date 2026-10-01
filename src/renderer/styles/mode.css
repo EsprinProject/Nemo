@@ -298,9 +298,14 @@ html.modern-layout .sidebar-action-wrap {
     -webkit-app-region: drag;
 }
 /* no-drag 是「抠洞」语义：把这些控件从上面的拖动区里挖出来，它们照常接收点击。
-   标签本身（.tab-item）的 no-drag 与标题栏里那份同源，见 styles/base.css */
+   标签本身（.tab-item）的 no-drag 与标题栏里那份同源，见 styles/base.css。
+
+   编辑器顶栏右侧那一组按「.editor-actions 的每个直接子元素」整片挖出来（而不是逐个点名）：
+   这一组里前后加过好几枚按钮（随口记的麦克风、待办完成开关），漏掉一枚的后果就是
+   那枚按钮的点击被整条顶栏的拖动区吞掉——按钮画得出来、按下去只是把窗口拖了一下。
+   挖掉子元素后，组间留白（gap）与整条顶栏的空闲段照旧是拖动区。 */
 html.modern-layout .editor-meta > *,
-html.modern-layout .editor-view-modes,
+html.modern-layout .editor-actions > *,
 html.modern-layout .notes-panel-header .search-box,
 html.modern-layout .notes-panel-header .dropdown,
 html.modern-layout .settings-sidebar .settings-back,
@@ -375,12 +380,16 @@ html.modern-layout .settings-drag-band {
 html.modern-layout body.is-fullscreen .settings-drag-band {
     margin-right: 178px;
 }
-/* 内容区紧接在这条空白下方，右侧一段仍落在悬浮按钮组的投影里，照旧让出走廊 */
+/* 内容区紧接在这条拖动空白下方。右侧不再为悬浮按钮组让出整条 312px 走廊：
+   按钮组只占顶上 40px 高的一条，而内容区正好从 40px 处起排
+   （--settings-top-inset 取的就是按钮组的高度，见 styles/settings.css），
+   滚动时内容又被裁在这条线以下，右上角因此碰不到那排按钮。
+   让出整条走廊只会白白丢掉一列宽度：2 栏布局下右边那一大块空白就是这么来的。 */
 html.modern-layout .settings-view .settings-content {
     grid-column: 2;
     grid-row: 2;
     padding-top: 0;
-    padding-right: 312px;
+    padding-right: 48px;
 }
 /* 编辑器顶栏的左右内边距都收到 8px：右侧那组控件（视图切换，以及仅待办可见的完成开关）
    与上面标签栏的内边距对齐（标签栏最右那个标签同样停在右沿 8px 处），
@@ -410,11 +419,8 @@ html.modern-layout.tabs-disabled body.is-fullscreen .editor-topbar {
 html.modern-layout.tabs-disabled .app-body:has(#ai-panel:not(.hidden):not(.ai-collapsed)) .editor-topbar {
     padding-right: 16px;
 }
-/* 全屏时窗口按钮不显示（见 base.css），走廊收窄到工具按钮组那么宽；
+/* 全屏时窗口按钮不显示（见 base.css），标签栏的走廊收窄到工具按钮组那么宽；
    同时像标题栏那样禁用拖动区，免得在无边框全屏里误拖 */
-html.modern-layout body.is-fullscreen .settings-view .settings-content {
-    padding-right: 178px;
-}
 html.modern-layout body.is-fullscreen .workspace-tabs {
     margin-right: 178px;
     -webkit-app-region: no-drag;

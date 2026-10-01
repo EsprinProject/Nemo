@@ -47,6 +47,114 @@ function setupEvents() {
         }
     };
 
+    // 编辑器粘贴：若粘贴内容包含图片或文件，自动转存为 assets 并插入 markdown 引用
+    contentTextarea.addEventListener('paste', async (event) => {
+        const item = getActiveItem();
+        if (!item || isReadOnlyItem(item)) return;
+        const clipboardData = event.clipboardData;
+        if (!clipboardData) return;
+
+        const files = [];
+        if (clipboardData.files && clipboardData.files.length) {
+            for (let i = 0; i < clipboardData.files.length; i++) {
+                files.push(clipboardData.files[i]);
+            }
+        } else if (clipboardData.items && clipboardData.items.length) {
+            for (let i = 0; i < clipboardData.items.length; i++) {
+                const it = clipboardData.items[i];
+                if (it.kind === 'file') {
+                    const file = it.getAsFile();
+                    if (file) files.push(file);
+                }
+            }
+        }
+
+        if (!files.length) return; // 纯文本走默认粘贴
+
+        event.preventDefault();
+        const saved = [];
+        for (const file of files) {
+            try {
+                let filePath = '';
+                if (typeof webUtils !== 'undefined' && typeof webUtils.getPathForFile === 'function') {
+                    filePath = webUtils.getPathForFile(file);
+                } else if (file.path) {
+                    filePath = file.path;
+                }
+
+                if (filePath && fs.existsSync(filePath)) {
+                    const asset = saveAssetFile(filePath);
+                    if (asset) saved.push(asset);
+                } else {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const buffer = Buffer.from(arrayBuffer);
+                    const asset = saveAssetFile(null, buffer, file.name);
+                    if (asset) saved.push(asset);
+                }
+            } catch (err) {
+                console.error('粘贴文件保存失败:', err);
+            }
+        }
+
+        if (saved.length) {
+            insertAssetReferences(saved);
+        }
+    });
+
+    // 编辑器拖拽放入文件
+    const editorPane = document.getElementById('editor-pane');
+    if (editorPane) {
+        editorPane.addEventListener('dragover', (event) => {
+            const types = event.dataTransfer && event.dataTransfer.types;
+            if (!types || !Array.from(types).includes('Files')) return;
+            const item = getActiveItem();
+            if (!item || isReadOnlyItem(item)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+        });
+
+        editorPane.addEventListener('drop', async (event) => {
+            const types = event.dataTransfer && event.dataTransfer.types;
+            if (!types || !Array.from(types).includes('Files')) return;
+            const item = getActiveItem();
+            if (!item || isReadOnlyItem(item)) return;
+            event.preventDefault();
+
+            const dtFiles = event.dataTransfer.files;
+            if (!dtFiles || !dtFiles.length) return;
+
+            const saved = [];
+            for (let i = 0; i < dtFiles.length; i++) {
+                const file = dtFiles[i];
+                try {
+                    let filePath = '';
+                    if (typeof webUtils !== 'undefined' && typeof webUtils.getPathForFile === 'function') {
+                        filePath = webUtils.getPathForFile(file);
+                    } else if (file.path) {
+                        filePath = file.path;
+                    }
+
+                    if (filePath && fs.existsSync(filePath)) {
+                        const asset = saveAssetFile(filePath);
+                        if (asset) saved.push(asset);
+                    } else {
+                        const arrayBuffer = await file.arrayBuffer();
+                        const buffer = Buffer.from(arrayBuffer);
+                        const asset = saveAssetFile(null, buffer, file.name);
+                        if (asset) saved.push(asset);
+                    }
+                } catch (err) {
+                    console.error('拖拽文件保存失败:', err);
+                }
+            }
+
+            if (saved.length) {
+                insertAssetReferences(saved);
+                showToast(`已插入 ${saved.length} 个文件`);
+            }
+        });
+    }
+
     document.getElementById('editor-folder-select').onchange = (e) => {
         const item = getActiveItem();
         if (item && !isReadOnlyItem(item)) {
@@ -252,6 +360,11 @@ function setupEvents() {
         btn.onclick = () => formatMarkdown(btn.getAttribute('data-fmt'));
     });
 
+    const btnInsertFile = document.getElementById('btn-insert-file');
+    if (btnInsertFile) {
+        btnInsertFile.onclick = () => pickAndInsertAssets();
+    }
+
     // 新建文件夹 / 添加标签：输入框由主进程的独立弹窗窗口承载
     document.getElementById('btn-add-folder').onclick = async () => {
         const name = await showPrompt('请输入新文件夹的名称', {
@@ -316,6 +429,12 @@ function setupEvents() {
         // Ctrl+K 聚焦搜索框
         if (key === 'k') {
             e.preventDefault();
+            // 设置页里中栏整块让位、搜索框是 display: none，直接聚焦等于按了没反应：
+            // 先退回笔记列表再交焦点（offparent 为空即当前不可见）
+            if (searchInput.offsetParent === null && State.activeNoteId === 'settings') {
+                closeTab('settings');
+                renderApp();
+            }
             searchInput.focus();
             return;
         }

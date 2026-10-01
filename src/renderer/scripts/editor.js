@@ -60,6 +60,24 @@ function renderMarkdown(force = false) {
     }
     container.innerHTML = marked.parse(content || '*空内容*');
 
+    // 处理预览区内的链接与附件点击：
+    // 若点击的是本地附件（如 assets/xxx.pdf 或其他文件），调用主进程在系统默认程序中打开
+    container.querySelectorAll('a').forEach((link) => {
+        const rawHref = link.getAttribute('data-raw-href') || link.getAttribute('href') || '';
+        if (rawHref.startsWith('assets/')) {
+            link.onclick = (e) => {
+                e.preventDefault();
+                ipcRenderer.invoke('assets:open-file', rawHref).then((res) => {
+                    if (res && !res.ok) {
+                        showToast(`打开附件失败: ${res.error || '未知错误'}`);
+                    }
+                }).catch((err) => {
+                    showToast('打开附件失败');
+                });
+            };
+        }
+    });
+
     container.querySelectorAll('input[type="checkbox"]').forEach((cb, idx) => {
         cb.removeAttribute('disabled');
         cb.onchange = () => {
@@ -222,6 +240,106 @@ function formatMarkdown(type) {
     textarea.focus();
     autoSaveActiveItem();
     flushRenderMarkdown();
+}
+
+// 常见图片扩展名
+const IMAGE_EXT_LIST = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'];
+
+function isImageFileName(filename) {
+    const ext = path.extname(String(filename || '')).toLowerCase();
+    return IMAGE_EXT_LIST.includes(ext);
+}
+
+// 保存文件到 assets/ 目录并返回相对路径（assets/xxx.ext）
+function saveAssetFile(sourcePath, buffer = null, originalName = '') {
+    ensureStorageDirs();
+    const name = originalName || (sourcePath ? path.basename(sourcePath) : 'file.bin');
+    const ext = path.extname(name).toLowerCase();
+    const safeExt = /^\.[A-Za-z0-9]{1,8}$/.test(ext) ? ext : '';
+    const randomId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const storedName = `${randomId}${safeExt}`;
+    const targetPath = path.join(ASSETS_DIR, storedName);
+
+    if (buffer) {
+        fs.writeFileSync(targetPath, buffer);
+    } else if (sourcePath) {
+        fs.copyFileSync(sourcePath, targetPath);
+    } else {
+        return null;
+    }
+    notifyRemoteWrite(targetPath);
+    return {
+        name,
+        relative: `assets/${storedName}`,
+        isImage: isImageFileName(name)
+    };
+}
+
+// 将资源引用 Markdown 插入编辑器光标所在处
+function insertAssetReferences(assetList) {
+    if (!assetList || !assetList.length) return;
+    const textarea = document.getElementById('textarea-note-content');
+    if (!textarea || textarea.readOnly) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+
+    let insertText = '';
+    assetList.forEach((asset) => {
+        const title = asset.name || '附件';
+        if (asset.isImage) {
+            insertText += `![${title}](${asset.relative})\n`;
+        } else {
+            insertText += `[${title}](${asset.relative})\n`;
+        }
+    });
+
+    textarea.value = textarea.value.substring(0, start) + insertText + textarea.value.substring(end);
+    const newPos = start + insertText.length;
+    textarea.setSelectionRange(newPos, newPos);
+    textarea.focus();
+    autoSaveActiveItem();
+    flushRenderMarkdown();
+}
+
+// 弹出文件选择框插入附件
+async function pickAndInsertAssets() {
+    const item = getActiveItem();
+    if (!item) {
+        showToast('请先打开或新建一篇笔记');
+        return;
+    }
+    if (isReadOnlyItem(item)) {
+        showToast('废纸篓中的内容为只读');
+        return;
+    }
+
+    let picked = null;
+    try {
+        picked = await ipcRenderer.invoke('assets:pick-files');
+    } catch (err) {
+        console.error('打开文件选择对话框失败:', err);
+        showToast('打开文件选择对话框失败');
+        return;
+    }
+    if (!picked || picked.canceled || !Array.isArray(picked.paths) || !picked.paths.length) return;
+
+    const saved = [];
+    picked.paths.forEach((filePath) => {
+        try {
+            const asset = saveAssetFile(filePath);
+            if (asset) saved.push(asset);
+        } catch (err) {
+            console.error('保存附件失败:', filePath, err);
+        }
+    });
+
+    if (saved.length) {
+        insertAssetReferences(saved);
+        showToast(`已插入 ${saved.length} 个文件`);
+    } else {
+        showToast('插入文件失败');
+    }
 }
 
 // 编辑器内 Tab 缩进：按 Tab 不再切换焦点，而是插入缩进

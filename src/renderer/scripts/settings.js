@@ -58,10 +58,14 @@ function initSettingsNav() {
         item.type = 'button';
         item.className = 'nav-item settings-nav-item';
         item.dataset.settingsTarget = category.id;
+        // 分类名同时写进 title / aria-label：窗口过窄时分类栏收成图标条
+        //（见 styles/settings.css 的自适应一段），那时条目上只剩图标，名字靠它给出
+        item.title = category.label;
+        item.setAttribute('aria-label', category.label);
         item.innerHTML = `
             <span class="nav-item-left">
                 <span class="ms-icon sm">${category.icon}</span>
-                <span>${escapeHTML(category.label)}</span>
+                <span class="settings-nav-label">${escapeHTML(category.label)}</span>
             </span>
         `;
         item.onclick = () => switchSettingsCategory(category.id);

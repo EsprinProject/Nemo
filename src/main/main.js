@@ -455,6 +455,21 @@ function openExternalUrl(targetUrl) {
 // 页面导航收口：站外链接走系统浏览器，其余导航一律拦下。
 // 笔记正文与 AI 回答里的链接因此不可能把窗口导航到不受控的页面。
 app.on('web-contents-created', (event, contents) => {
+  /* 渲染进程的报错转发到主进程终端：页面里抛的异常默认只出现在开发者工具的控制台里，
+     而界面出问题时的表现往往是「画得出来、点不动」——终端里此刻一行线索都没有。
+     只转发 error 一级，其余（应用自己的 [INFO] / [WARN] 日志）不重复打印。 */
+  contents.on('console-message', (event, ...args) => {
+    // Electron 30 起是 (event, details)；更早是 (event, level, message, line, sourceId)
+    const details = args[0] && typeof args[0] === 'object' ? args[0] : null;
+    const level = details ? details.level : args[0];
+    const message = details ? details.message : args[1];
+    const line = details ? details.lineNumber : args[2];
+    const source = details ? details.sourceId : args[3];
+    if (level !== 'error' && level !== 3) return;
+    const where = source ? ` (${source}:${line})` : '';
+    console.error(`[ERROR] [Renderer] ${message}${where}`);
+  });
+
   contents.setWindowOpenHandler(({ url }) => {
     openExternalUrl(url);
     return { action: 'deny' };
@@ -485,8 +500,9 @@ function isDirWritable(dir) {
 }
 
 function dirHasData(dir) {
-  // 笔记与待办分别是 notes/、todos/ 下的 .md 文件（自带元数据），config.json 则记录偏好设置与文件夹列表
-  return fs.existsSync(path.join(dir, 'notes'))
+  // 笔记与待办保存在 items/（兼容旧版 notes/、todos/），config.json 则记录偏好设置与文件夹列表
+  return fs.existsSync(path.join(dir, 'items'))
+    || fs.existsSync(path.join(dir, 'notes'))
     || fs.existsSync(path.join(dir, 'todos'))
     || fs.existsSync(path.join(dir, 'config.json'));
 }
@@ -632,6 +648,42 @@ ipcMain.handle('notes:pick-import', async (event) => {
   const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
   if (result.canceled) return { canceled: true, paths: [] };
   return { canceled: false, paths: result.filePaths };
+});
+
+/* 选择要插入到当前文档的附件文件（图片、文档等） */
+ipcMain.handle('assets:pick-files', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const parent = win && !win.isDestroyed() ? win : null;
+  const options = {
+    title: '选择要插入到文档的文件',
+    buttonLabel: '插入',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      {
+        name: '常见媒体与文件',
+        extensions: ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico', 'pdf', 'zip', 'txt', 'md']
+      },
+      { name: '所有文件', extensions: ['*'] }
+    ]
+  };
+  const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
+  if (result.canceled) return { canceled: true, paths: [] };
+  return { canceled: false, paths: result.filePaths };
+});
+
+// 在系统默认应用中打开文档附件或在文件管理器中定位
+ipcMain.handle('assets:open-file', async (event, payload) => {
+  const relative = typeof payload === 'string' ? payload : (payload && payload.path);
+  if (!relative || typeof relative !== 'string') return { ok: false, error: '无效路径' };
+  const fullPath = path.join(resolveDataDir(), relative);
+  if (!fs.existsSync(fullPath)) return { ok: false, error: '文件不存在' };
+  try {
+    const errorMsg = await shell.openPath(fullPath);
+    if (errorMsg) return { ok: false, error: errorMsg };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  }
 });
 
 // 数据存放位置：渲染进程启动阶段同步查询（早于页面脚本执行，确保路径一致）

@@ -4,9 +4,67 @@
 // 废纸篓定期复查的定时器句柄：留一个引用，便于窗口卸载或调试时清理
 let trashPurgeTimer = null;
 
+/* 启动链的容错与自诊断。
+
+   事件绑定（setupEvents）与首次渲染（renderApp）排在二十来个 init 之后，任何一步抛错
+   都会让后面的步骤一并停下：界面画得出来、却点不动任何东西，也就是「整个界面都操作不了」。
+   因此在启动前先装上三道保险：
+     1. 每一步单独包起来（runBootStep）——一步失败只记一条，其余照常跑完，
+        事件绑定与首次渲染因此一定能走到；
+     2. 载入数据（loadData）单独兜底——数据层出错时退回空数据继续启动，而不是整体停摆；
+     3. 未捕获的异常与未处理的异步错误一并记下（window 的 error / unhandledrejection）
+        ——点某处没反应时能留下到底是哪一句抛的。
+   渲染进程的 console 只在开发者工具里可见，因此最后把这些失败用提示条摆到界面上
+   （showUiFailures），出错的那一块是哪一步、什么原因，一眼就能看到。 */
+const UI_FAILURES = [];
+
+function reportUiFailure(label, error) {
+    const detail = error && error.message ? error.message : String(error);
+    UI_FAILURES.push(`${label}：${detail}`);
+    try {
+        console.error(`[ERROR] [Boot] step=${label} msg=${detail}`);
+    } catch (e) {}
+}
+
+function runBootStep(label, run) {
+    try {
+        return run();
+    } catch (error) {
+        reportUiFailure(label, error);
+        return undefined;
+    }
+}
+
+// 全局兜底：任何一处未捕获的异常 / 未处理的 Promise 拒绝都记一条，
+// 免得界面「看着正常却点不动」时一行线索都留不下
+window.addEventListener('error', (event) => {
+    reportUiFailure('未捕获异常', (event && (event.error || event.message)) || '未知错误');
+});
+window.addEventListener('unhandledrejection', (event) => {
+    reportUiFailure('未处理的异步错误', (event && event.reason) || '未知原因');
+});
+
+// 把失败清单摆到界面上：一条提示条报总数与第一条原因，完整清单留在 console 里
+function showUiFailures() {
+    if (!UI_FAILURES.length) return;
+    try {
+        console.error(`[ERROR] [Boot] failures=${UI_FAILURES.length}\n` + UI_FAILURES.join('\n'));
+    } catch (e) {}
+    if (typeof showToast !== 'function') return;
+    const more = UI_FAILURES.length > 1 ? `（共 ${UI_FAILURES.length} 处，详情见开发者工具）` : '';
+    showToast(`界面有一处出错：${UI_FAILURES[0]}${more}`);
+}
+
 // App Boot
 window.onload = () => {
-    const saved = loadData();
+    // 数据载入失败不能让整个界面停在「画得出来、点不动」的状态上：退回空数据继续启动，
+    // 出错的那一步记进失败清单并在最后提示出来
+    let saved = {};
+    try {
+        saved = loadData() || {};
+    } catch (error) {
+        reportUiFailure('载入数据', error);
+    }
     State.notes = Array.isArray(saved.notes) ? saved.notes : [];
     State.todos = Array.isArray(saved.todos) ? saved.todos : [];
     // 一次性标好条目类型：后续所有类型判断都是常数时间
@@ -67,7 +125,7 @@ window.onload = () => {
             console.warn(`待办格式：已为 ${cleanup.repairedTodos} 项待办写回内嵌元数据`);
         }
         if (cleanup.skippedFiles > 0) {
-            console.warn(`笔记目录：已忽略 ${cleanup.skippedFiles} 个非笔记文件`);
+            console.warn(`条目目录：已忽略 ${cleanup.skippedFiles} 个非笔记文件`);
         }
         if (cleanup.skippedTodoFiles > 0) {
             console.warn(`待办目录：已忽略 ${cleanup.skippedTodoFiles} 个非待办文件`);
@@ -75,49 +133,56 @@ window.onload = () => {
     }
 
     // 按保留策略清理过期的废纸篓条目：放在首次渲染之前，避免闪现即将被删除的内容
-    const purgedTrashItems = purgeExpiredTrashItems();
+    const purgedTrashItems = runBootStep('清理废纸篓', purgeExpiredTrashItems) || 0;
+
+    /* 以下每一步都经 runBootStep 隔离：某一步失败（某个元素对不上、某个数据目录读不出来）
+       只记一条并继续，事件绑定（setupEvents）与首次渲染（renderApp）不受影响。
+       步骤名会出现在失败提示里，据此能直接定位是哪个模块出的问题。 */
 
     // 原生下拉菜单统一换成自绘（select 与 datalist）：放在其余初始化之前，后续对 select.value 的赋值都能同步显示
-    initCustomDropdowns();
-    initTheme();
-    initThemeMode();
-    initThemeStyle();
-    initAccentColor();
-    initBrandColor();
-    initCornerRadius();
-    initUiScale();
-    applySpellcheck();
-    initFonts();
-    applySidebarCollapsed();
-    initSettingsNav();
-    initUiMode();
-    initAiSettings();
-    initAiChats();
-    initAiAgent();
-    initAiFiles();
-    initAiPanel();
+    runBootStep('自绘下拉菜单', initCustomDropdowns);
+    runBootStep('主题', initTheme);
+    runBootStep('明暗模式', initThemeMode);
+    runBootStep('界面风格', initThemeStyle);
+    runBootStep('主题色', initAccentColor);
+    runBootStep('应用名颜色', initBrandColor);
+    runBootStep('圆角尺度', initCornerRadius);
+    runBootStep('界面缩放', initUiScale);
+    runBootStep('拼写检查', applySpellcheck);
+    runBootStep('字体', initFonts);
+    runBootStep('侧边栏收起状态', applySidebarCollapsed);
+    runBootStep('设置分类', initSettingsNav);
+    runBootStep('界面布局', initUiMode);
+    runBootStep('AI 接口设置', initAiSettings);
+    runBootStep('AI 对话记录', initAiChats);
+    runBootStep('AI Agent', initAiAgent);
+    runBootStep('AI 附件', initAiFiles);
+    runBootStep('AI 面板', initAiPanel);
     // 随口记：编辑器顶栏入口、聆听条与快捷键（设置项由设置页渲染时同步）
-    initVoiceNotes();
-    setupEvents();
-    syncTrashRetentionSelect();
-    refreshDataDirInfo();
-    initSyncServerSettings();
-    initJournalFileSettings();
+    runBootStep('随口记', initVoiceNotes);
+    // 事件绑定：这一步必须执行到，界面才不会「画得出来、点不动」
+    runBootStep('事件绑定', setupEvents);
+    runBootStep('废纸篓保留期限', syncTrashRetentionSelect);
+    runBootStep('数据存放位置', refreshDataDirInfo);
+    runBootStep('自建同步设置', initSyncServerSettings);
+    runBootStep('日记文件设置', initJournalFileSettings);
     // 团队笔记：设置页里的共享请求与共享列表
-    initTeamNotesSettings();
+    runBootStep('团队笔记设置', initTeamNotesSettings);
     // 秘密本：设置页里隐藏与加密条目的刷新入口
-    initSecretSettings();
-    initUpdateSettings();
-    initTraySettings();
-    initAutoLaunchSettings();
+    runBootStep('秘密本设置', initSecretSettings);
+    runBootStep('更新设置', initUpdateSettings);
+    runBootStep('托盘设置', initTraySettings);
+    runBootStep('开机自启设置', initAutoLaunchSettings);
     // 桌面便利贴：标题栏入口、设置分区与条目桥接（详见 scripts/sticky_notes.js）
-    initStickyNoteSettings();
+    runBootStep('桌面便利贴设置', initStickyNoteSettings);
 
     // 启动时不自动打开任何标签页：停留在空状态，由用户自行选择、新建笔记或待办
     State.openNoteIds = [];
     State.activeNoteId = null;
 
-    renderApp();
+    runBootStep('首次渲染', renderApp);
+    // 上面任何一步失败都在这里汇总成一条提示：界面照常可用，出错的那一步写明在提示里
+    showUiFailures();
 
     if (purgedTrashItems > 0) {
         showToast(`已自动清理 ${purgedTrashItems} 条超过 ${State.trashRetentionDays} 天的废纸篓内容`);

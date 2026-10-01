@@ -27,8 +27,8 @@ const State = {
     theme: 'system',
     // 主题风格（皮肤）：default 为内置的 GitHub 风格，alom 为 Alom 风格
     themeStyle: 'default',
-    // 主题色（强调色）：#RRGGBB，空字符串表示跟随主题使用内置默认色
-    accentColor: '',
+    // 主题色（强调色）：system（默认跟随系统主题色）/ #RRGGBB / 空字符串（跟随主题内置默认色）
+    accentColor: 'system',
     // 左上角应用名文字颜色：brand（品牌色）/ mono（跟随明暗用黑白）/ accent（跟随主题色）
     brandColor: 'brand',
     // 圆角尺度：square（方）/ slight（微圆角）/ default（默认）/ large（大）

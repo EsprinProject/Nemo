@@ -186,12 +186,35 @@ function resolveEffectiveTheme() {
   return isLight ? 'light' : 'dark';
 }
 
-// 主题色（强调色）：统一为 #RRGGBB；未设置或格式非法时返回空字符串，弹窗沿用内置默认色
+// 获取系统当前的主题色（Windows/macOS），统一为 #RRGGBB；不支持或获取失败时返回空字符串
+function getSystemAccentColor() {
+  try {
+    const { systemPreferences } = require('electron');
+    if (typeof systemPreferences.getAccentColor === 'function') {
+      const raw = systemPreferences.getAccentColor();
+      if (typeof raw === 'string' && raw.length >= 6) {
+        // Windows 返回 RRGGBBAA 或 RRGGBB（例如 '0078d7ff'），取前 6 位
+        return `#${raw.slice(0, 6).toUpperCase()}`;
+      }
+    }
+  } catch (e) {}
+  return '';
+}
+
+// 主题色（强调色）：'system'（默认）/ '#RRGGBB' / 空字符串（跟随主题）；未设置时默认返回系统主题色
 function resolveAccentColor() {
   const raw = readUserConfig().accentColor;
-  if (typeof raw !== 'string') return '';
-  const matched = raw.trim().match(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
-  if (!matched) return '';
+  if (raw === undefined || raw === null) {
+    return getSystemAccentColor();
+  }
+  if (typeof raw !== 'string') return getSystemAccentColor();
+  const trimmed = raw.trim();
+  if (trimmed === '') return '';
+  if (trimmed.toLowerCase() === 'system') {
+    return getSystemAccentColor();
+  }
+  const matched = trimmed.match(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+  if (!matched) return getSystemAccentColor();
   let hex = matched[1];
   if (hex.length === 3) hex = hex.split('').map((char) => char + char).join('');
   return `#${hex.toUpperCase()}`;
@@ -581,6 +604,15 @@ ipcMain.handle('fonts:list', () => {
     }
   }
   return cachedSystemFonts;
+});
+
+// 获取系统主题色
+ipcMain.handle('system:get-accent-color', () => {
+  return getSystemAccentColor();
+});
+
+ipcMain.on('system:get-accent-color-sync', (event) => {
+  event.returnValue = getSystemAccentColor();
 });
 
 /* 导入文件为笔记：弹出系统文件选择框，只返回路径，
@@ -1108,6 +1140,21 @@ app.whenReady().then(async () => {
     const flavor = IS_PORTABLE_DATA_RUN ? '便携版' : (IS_DEV_RUN ? '开发运行' : '安装版');
     console.log(`[Esprin Nemo] 启动：${flavor}，数据目录 ${resolveDataDir()}`);
   });
+
+  // 监听系统主题色变化，在选择"跟随系统主题色"时通知渲染进程更新
+  try {
+    const { systemPreferences } = require('electron');
+    if (typeof systemPreferences.on === 'function') {
+      systemPreferences.on('accent-color-changed', (event, newColor) => {
+        const hex = typeof newColor === 'string' && newColor.length >= 6
+          ? `#${newColor.slice(0, 6).toUpperCase()}`
+          : getSystemAccentColor();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('system:accent-color-changed', hex);
+        }
+      });
+    }
+  } catch (e) {}
 
   /* 主窗口是整个应用唯一的正式界面，单独包一层：真开不出来时用系统弹窗说明原因并退出，
      而不是留下一个只有托盘、点不出窗口的进程（托盘那侧也拿不到可显示的窗口）。 */

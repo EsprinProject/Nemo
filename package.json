@@ -1,6 +1,6 @@
 {
   "name": "esprin_nemo",
-  "version": "3.2.4",
+  "version": "3.2.5",
   "main": "src/main/main.js",
   "description": "Note, Nothing.",
   "author": "TheOninesixY <oninesixy@qq.com>",
@@ -16,10 +16,9 @@
   "build": {
     "appId": "io.github.theoninesixy.esprin_nemo",
     "productName": "Esprin Nemo",
-    "icon": "assets/Main.new.png",
+    "icon": "src/assets/Main.new.png",
     "files": [
-      "src/",
-      "assets/"
+      "src/"
     ],
     "win": {
       "target": [

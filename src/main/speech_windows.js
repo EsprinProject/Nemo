@@ -26,7 +26,7 @@ let scriptSource = '';
 let session = null;
 
 function isSupportedPlatform() {
-  return process.platform === 'win32' && fs.existsSync(POWERSHELL_EXE);
+  return fs.existsSync(POWERSHELL_EXE);
 }
 
 function readScriptSource() {

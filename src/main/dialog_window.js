@@ -35,7 +35,7 @@ let resolveRadius = () => 'default';
 let resolveStyle = () => 'default';
 // 字体：与主窗口一样的 { uiLatin, uiCjk, docLatin, docCjk }
 let resolveFonts = () => ({});
-let iconPath = path.join(__dirname, '..', '..', 'assets', 'Main.new.png');
+let iconPath = path.join(__dirname, '..', 'assets', 'icon.png');
 let ipcRegistered = false;
 
 // 由 main.js 注入主题解析与图标路径（主题需要读取用户数据目录中的 config.json）

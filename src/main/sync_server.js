@@ -920,10 +920,7 @@ function importJournalFile(payload = {}) {
 // 路径是否落在某个目录内（含自身）：用于拒绝把导出目标放进数据目录
 function isSameOrInside(target, parent) {
   if (!target || !parent) return false;
-  const normalize = (value) => {
-    const resolved = path.resolve(String(value));
-    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
-  };
+  const normalize = (value) => path.resolve(String(value)).toLowerCase();
   const child = normalize(target);
   const root = normalize(parent);
   return child === root || child.startsWith(root.endsWith(path.sep) ? root : `${root}${path.sep}`);

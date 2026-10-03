@@ -63,7 +63,7 @@ let getItems = () => [];
 let onAction = () => {};
 
 function isSupported() {
-  return process.platform === 'win32' && fs.existsSync(REG_EXE);
+  return fs.existsSync(REG_EXE);
 }
 
 /* 菜单项点击后要启动的那个可执行文件。

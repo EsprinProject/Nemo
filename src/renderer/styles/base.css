@@ -18,6 +18,11 @@ html, body {
     -webkit-font-smoothing: antialiased;
 }
 
+/* Mica 材质：主窗口启用了 Windows Mica 时，body 退为透明以让材质透出 */
+html.mica, html.mica body {
+    background-color: transparent;
+}
+
 /* Material Symbols Utility */
 .ms-icon {
     font-family: 'Material Symbols Rounded';

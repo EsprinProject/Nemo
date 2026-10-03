@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Menu, ipcMain, session, dialog, shell, nativeTheme } = require('electron');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const {
@@ -52,8 +53,8 @@ const { configureUpdater, registerUpdateIpc, scheduleAutoChecks, isPortableRun, 
 const APP_ROOT = app.getAppPath();
 
 // 窗口与托盘图标一律用光栅版：Electron 的 nativeImage 只解 PNG / JPEG（Windows 另支持 ICO），
-// 不解析 SVG；矢量源是 assets/Main.new.svg，构建图标用的就是它（见 package.json 的 build.icon）
-const APP_ICON_PATH = path.join(APP_ROOT, 'assets', 'Main.new.png');
+// 不解析 SVG。路径统一取自 package.json 的 icon，构建时 electron-builder 也用同一份源。
+const APP_ICON_PATH = path.join(APP_ROOT, require('../../package.json').icon);
 
 // 安装版使用 %APPDATA%/esprin_nemo/data，开发运行（bun start → electron .）使用项目内 data/，
 // 便携版使用便携版所在目录下的 data/（数据与记录都随程序目录走，见 src/main/data_path.js）。
@@ -186,7 +187,7 @@ function resolveEffectiveTheme() {
   return isLight ? 'light' : 'dark';
 }
 
-// 获取系统当前的主题色（Windows/macOS），统一为 #RRGGBB；不支持或获取失败时返回空字符串
+// 获取系统当前的主题色（Windows），统一为 #RRGGBB；不支持或获取失败时返回空字符串
 function getSystemAccentColor() {
   try {
     const { systemPreferences } = require('electron');
@@ -417,8 +418,7 @@ function handleStickyNoteClosed() {
 }
 
 function normalizePathForCompare(target) {
-  const resolved = path.resolve(target);
-  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  return path.resolve(target).toLowerCase();
 }
 
 function isSamePath(a, b) {
@@ -433,9 +433,7 @@ function isInternalPageUrl(targetUrl) {
     if (parsed.protocol !== 'file:') return false;
     const decoded = decodeURIComponent(parsed.pathname);
     // file:///E:/dir/page.html 的 pathname 以斜杠开头，去掉后再交给 path 处理
-    const filePath = process.platform === 'win32'
-      ? decoded.replace(/^\//, '').replace(/\//g, '\\')
-      : decoded;
+    const filePath = decoded.replace(/^\//, '').replace(/\//g, '\\');
     const relative = path.relative(APP_ROOT, path.resolve(filePath));
     return !!relative && !relative.startsWith('..') && !path.isAbsolute(relative);
   } catch (error) {
@@ -947,6 +945,19 @@ function abortStartup(blocker) {
 const REVEAL_DELAY = 90;
 const REVEAL_FALLBACK_MS = 2500;
 
+// Electron v25+ 原生 setBackgroundMaterial，仅 Win11 Mica。
+// Win10 不启用任何玻璃效果（DWM API 已被微软移除）。
+function applyBackdropViaNativeApi(win) {
+  try {
+    win.setBackgroundMaterial('mica');
+    console.log('[Esprin Nemo] setBackgroundMaterial → mica');
+    return true;
+  } catch (e) {
+    console.error('[Esprin Nemo] setBackgroundMaterial 失败:', e.message);
+    return false;
+  }
+}
+
 function createWindow() {
   Menu.setApplicationMenu(null);
 
@@ -965,6 +976,22 @@ function createWindow() {
   // 这里只按同一比例把窗口的最小尺寸一起放大
   const minSize = scaleMinWindowSize(resolveUiScale());
 
+  // Mica / 亚克力 backdrop 检测：Win10 1809+ (build >= 17763) 即可尝试。
+  // 仅 build >= 22000 (Win11) 时才可能命中原生 Mica，其余走亚克力 or 模糊。
+  const MICA_ARG = '--esprin-nemo-mica';
+  let backdropEnabled = false;
+  let winBuild = 0;
+  try {
+    const release = os.release();
+    winBuild = parseInt(release.split('.').pop(), 10);
+    backdropEnabled = winBuild >= 22000;
+  } catch (e) { /* 解析失败就不试了 */ }
+  console.log(`[Esprin Nemo] Backdrop 检测: Build=${winBuild} Eligible=${backdropEnabled}`);
+
+  const additionalArgs = [DATA_DIR_ARG + currentDataDir];
+  if (IS_PORTABLE_RUN) additionalArgs.push(PORTABLE_ARG);
+  if (backdropEnabled) additionalArgs.push(MICA_ARG);
+
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -973,30 +1000,39 @@ function createWindow() {
     frame: false,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: initialBg,
     icon: APP_ICON_PATH,
+    backgroundColor: backdropEnabled ? '#00000000' : initialBg,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      // 页面脚本还在使用 require，因此维持上面的两项目前设置；
-      // 其余能力按最小可用原则显式关掉。
       nodeIntegrationInSubFrames: false,
       webviewTag: false,
       allowRunningInsecureContent: false,
-      // 便携版标记：渲染进程据此把「更新与版本」设置分类与面板一并摘掉
-      additionalArguments: IS_PORTABLE_RUN
-        ? [DATA_DIR_ARG + currentDataDir, PORTABLE_ARG]
-        : [DATA_DIR_ARG + currentDataDir]
+      additionalArguments: additionalArgs
     }
   });
 
   let revealed = false;
+  let backdropTried = false;
   const reveal = (reason) => {
     if (revealed || win.isDestroyed()) return;
     revealed = true;
     if (reason !== 'ready-to-show') {
       console.warn(`[Esprin Nemo] ready-to-show 没有来到，已按「${reason}」显示主窗口`);
     }
+
+    // vibe 必须 window.show() 之前调用 applyEffect
+    if (backdropEnabled && !backdropTried) {
+      backdropTried = true;
+      if (!applyBackdropViaNativeApi(win)) {
+        win.webContents.executeJavaScript(
+          'document.documentElement.classList.remove("mica");' +
+          'document.documentElement.style.backgroundColor="";'
+        ).catch(() => {});
+        console.error('[Esprin Nemo] vibedwm 失败，body 回退不透明');
+      }
+    }
+
     win.show();
   };
   win.once('ready-to-show', () => reveal('ready-to-show'));
@@ -1254,6 +1290,6 @@ app.on('will-quit', () => {
 
 app.on('window-all-closed', () => {
   // 托盘还在就等于应用还有一个入口，窗口都关掉也不必退出
-  if (process.platform === 'darwin' || isTrayEnabled()) return;
+  if (isTrayEnabled()) return;
   app.quit();
 });

@@ -469,3 +469,19 @@ html.sidebar-collapsed .sidebar .btn-sidebar-bottom {
     color: var(--text-muted);
     opacity: 0.85;
 }
+
+/* Mica 材质：侧边栏采用半透明玻璃质感，让 Windows Mica 壁纸模糊材质透出。
+   Alom / 魔幻风格已有各自的 backdrop-filter 方案，这里仅作用于默认风格。
+   设置页的侧边栏（.settings-sidebar）与首页侧边栏同款处理。 */
+html.mica:not([data-theme-style="alom"]):not([data-theme-style="magic"]) .sidebar,
+html.mica:not([data-theme-style="alom"]):not([data-theme-style="magic"]) .settings-sidebar {
+    background-color: rgba(13, 17, 23, 0.58);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-right-color: var(--border-light);
+}
+
+html.mica.light:not([data-theme-style="alom"]):not([data-theme-style="magic"]) .sidebar,
+html.mica.light:not([data-theme-style="alom"]):not([data-theme-style="magic"]) .settings-sidebar {
+    background-color: rgba(246, 248, 250, 0.64);
+}

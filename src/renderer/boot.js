@@ -39,6 +39,13 @@ const PORTABLE_ARG = '--esprin-nemo-portable';
 const IS_PORTABLE_RUN = (process.argv || []).includes(PORTABLE_ARG)
     || !!(process.env.PORTABLE_EXECUTABLE_FILE || process.env.PORTABLE_EXECUTABLE_DIR);
 
+// Mica 材质：主进程在 Windows 平台启用 backgroundMaterial: 'mica' 后传入此参数
+const MICA_ARG = '--esprin-nemo-mica';
+const IS_MICA_ENABLED = (process.argv || []).includes(MICA_ARG);
+if (IS_MICA_ENABLED) {
+    document.documentElement.classList.add('mica');
+}
+
 // 数据目录解析：优先向主进程同步查询（主进程已处理用户在设置中自定义的位置），
 // 失败时回退到命令行参数（主进程启动时会通过 --esprin-nemo-data-dir= 传入）。
 function resolveDataDir() {

@@ -59,7 +59,7 @@ let resolveDataDir = () => '';
 let resolveConfig = () => ({});
 // 归属窗口（主窗口）：便利贴的落点与新窗口的父级参考都以它所在的显示器为准
 let getOwnerWindow = () => null;
-let iconPath = path.join(__dirname, '..', '..', 'assets', 'Main.new.png');
+let iconPath = path.join(__dirname, '..', 'assets', 'icon.png');
 // 最后一张便利贴关闭后的回调（由 main.js 注入）：屏幕上是否还有窗口，只有 main.js 清楚
 let handleWindowClosed = () => {};
 let ipcRegistered = false;

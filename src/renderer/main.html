@@ -794,7 +794,7 @@
                             <div class="settings-row">
                                 <div class="settings-row-info">
                                     <span class="settings-row-label">API Key</span>
-                                    <span class="settings-row-desc">由系统密钥链加密保存（Windows 为 DPAPI、macOS 为钥匙串、Linux 为 libsecret），不写入数据目录，也不随 config.json 复制或分享；输入后回车即保存，本地服务（如 Ollama）可留空</span>
+                                    <span class="settings-row-desc">由系统密钥链加密保存（Windows DPAPI），不写入数据目录，也不随 config.json 复制或分享；输入后回车即保存，本地服务（如 Ollama）可留空</span>
                                 </div>
                                 <div class="ai-input-stack">
                                     <div class="ai-input-group">
@@ -989,7 +989,7 @@
                             <div class="settings-row">
                                 <div class="settings-row-info">
                                     <span class="settings-row-label">访问令牌</span>
-                                    <span class="settings-row-desc">由上方「账户登录」签发，或在服务端管理页面（服务器地址 + /admin）手动创建的令牌；创建时可绑定设备，绑定后该令牌提交的操作都记为该设备。令牌由系统密钥链加密保存（Windows 为 DPAPI、macOS 为钥匙串、Linux 为 libsecret），不写入数据目录，也不随 config.json 复制或分享；服务端以启动参数 --token 指定令牌时填入该值</span>
+                                    <span class="settings-row-desc">由上方「账户登录」签发，或在服务端管理页面（服务器地址 + /admin）手动创建的令牌；创建时可绑定设备，绑定后该令牌提交的操作都记为该设备。令牌由系统密钥链加密保存（Windows DPAPI），不写入数据目录，也不随 config.json 复制或分享；服务端以启动参数 --token 指定令牌时填入该值</span>
                                 </div>
                                 <div class="sync-input-stack">
                                     <div class="sync-input-group">

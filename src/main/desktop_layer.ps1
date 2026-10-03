@@ -3,8 +3,8 @@
 # Why this file exists:
 #   A desktop sticky note must sit on the desktop itself, below every application window.
 #   Win32 does that with SetWindowPos(hwnd, HWND_BOTTOM, ...), while Electron can only raise
-#   a window (setAlwaysOnTop) - there is no "send to bottom" API and no desktop window type
-#   outside Linux. The call therefore lives in this helper.
+#   a window (setAlwaysOnTop) - there is no "send to bottom" API. The call therefore
+#   lives in this helper.
 #
 # Why this file is ASCII-only with English comments:
 #   Windows PowerShell 5.1 reads BOM-less .ps1 files as ANSI, so non-ASCII source breaks

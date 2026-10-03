@@ -59,10 +59,6 @@ const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 // 下载进度上报节流：避免每收到一个数据块就往渲染进程发一次
 const PROGRESS_INTERVAL_MS = 300;
 
-// 可选的安装包后缀：Windows 取 exe，其余平台各自的后缀
-const PACKAGE_EXTENSIONS = process.platform === 'win32'
-  ? ['.exe']
-  : ['.appimage', '.deb', '.rpm', '.dmg', '.zip'];
 // Windows 安装包的命名规则（两道检查，缺一不可）：
 //   1) 文件名里存在独立的 setup 段 —— 由点 / 空格 / 连字符 / 下划线分隔，如 en.Setup.123.exe
 //   2) 以 .exe 结尾
@@ -148,9 +144,9 @@ function isPortableRun() {
   return !!(process.env.PORTABLE_EXECUTABLE_FILE || process.env.PORTABLE_EXECUTABLE_DIR);
 }
 
-// 能否自动安装：仅 Windows 安装版（开发运行只能手动安装；便携版不会走到这一步）
+// 能否自动安装：仅安装版（开发运行只能手动安装；便携版不会走到这一步）
 function canAutoInstall() {
-  return process.platform === 'win32' && app.isPackaged && !isPortableRun();
+  return app.isPackaged && !isPortableRun();
 }
 
 // 自动更新开关以 config.json 为准：数据目录切换后读到的就是新目录里的配置
@@ -357,18 +353,15 @@ async function requestGithubJson(url, { allowNotFound = false } = {}) {
 
 /* ---------------- 检查更新 ---------------- */
 
+// 有安装包后缀（实际上只剩 .exe，但保留后缀检测以防未来扩展）
 function hasPackageExtension(name) {
   const lower = asString(name).toLowerCase();
-  return PACKAGE_EXTENSIONS.some((ext) => lower.endsWith(ext));
+  return lower.endsWith('.exe');
 }
 
 // 文件名是否符合安装包命名规则：Windows 必须同时满足“有 setup 段”与“以 .exe 结尾”
 function isPackageName(name) {
-  const value = asString(name);
-  if (process.platform === 'win32') {
-    return EXE_FILE_PATTERN.test(value) && SETUP_SEGMENT_PATTERN.test(value);
-  }
-  return hasPackageExtension(value);
+  return EXE_FILE_PATTERN.test(asString(name)) && SETUP_SEGMENT_PATTERN.test(asString(name));
 }
 
 // 从 release 的附件里挑出符合命名规则的安装包；没有符合条件的附件时返回 null

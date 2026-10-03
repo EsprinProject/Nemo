@@ -18,34 +18,12 @@ function isDirectory(dir) {
   }
 }
 
-// 各平台常见字体目录
+// Windows 字体目录
 function getFontDirs() {
   const home = os.homedir();
-  const dirs = [];
-
-  if (process.platform === 'win32') {
-    const winDir = process.env.WINDIR || 'C:\\Windows';
-    const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
-    dirs.push(path.join(winDir, 'Fonts'));
-    // 用户自行安装的字体（Windows 10 1809+）
-    dirs.push(path.join(localAppData, 'Microsoft', 'Windows', 'Fonts'));
-  } else if (process.platform === 'darwin') {
-    dirs.push(
-      '/System/Library/Fonts',
-      '/System/Library/Fonts/Supplemental',
-      '/Library/Fonts',
-      path.join(home, 'Library', 'Fonts')
-    );
-  } else {
-    dirs.push(
-      '/usr/share/fonts',
-      '/usr/local/share/fonts',
-      path.join(home, '.fonts'),
-      path.join(home, '.local', 'share', 'fonts')
-    );
-  }
-
-  return dirs.filter(isDirectory);
+  const winDir = process.env.WINDIR || 'C:\\Windows';
+  const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+  return [path.join(winDir, 'Fonts'), path.join(localAppData, 'Microsoft', 'Windows', 'Fonts')].filter(isDirectory);
 }
 
 function collectFontFiles(dir, out, depth) {
@@ -104,7 +82,7 @@ function parseNameTable(table) {
     if (!length || start + length > table.length) continue;
 
     const raw = table.subarray(start, start + length);
-    // Windows(3)/Unicode(0) 平台使用 UTF-16BE，Mac 平台按单字节处理
+    // Windows(3)/Unicode(0) 平台使用 UTF-16BE
     let text = '';
     if (platformID === 3 || platformID === 0) {
       if (raw.length % 2 === 0) text = Buffer.from(raw).swap16().toString('utf16le').trim();

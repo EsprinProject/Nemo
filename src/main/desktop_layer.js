@@ -1,7 +1,6 @@
 /* 桌面层级：把窗口压到所有窗口之下（贴在桌面之上，不遮挡任何应用窗口）。
  *
- * Electron 只能把窗口抬到最前（setAlwaysOnTop），没有「置底」的 API，
- * 也没有桌面窗口类型（type: 'desktop' 只在 Linux 上有效），
+ * Electron 只能把窗口抬到最前（setAlwaysOnTop），没有\u201c置底\u201d的 API，
  * 因此这里维护一个常驻的 Windows PowerShell 子进程，把窗口句柄逐行送过去，
  * 由脚本调 Win32 的 SetWindowPos(HWND_BOTTOM) 完成（见 desktop_layer.ps1）。
  *
@@ -34,7 +33,7 @@ let unavailable = false;
 let closing = false;
 
 function isSupportedPlatform() {
-  return process.platform === 'win32' && fs.existsSync(POWERSHELL_EXE);
+  return fs.existsSync(POWERSHELL_EXE);
 }
 
 // 脚本内容只读一次；以 UTF-16LE base64 经 -EncodedCommand 交给 PowerShell：

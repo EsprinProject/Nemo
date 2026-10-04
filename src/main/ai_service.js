@@ -328,7 +328,7 @@ function importAttachmentFromBytes(raw) {
   }
   if (!buffer || !buffer.length) return { error: `${name} 内容为空` };
 
-  const mime = imageMimeFor(name) || (typeof raw.mime === 'string' && /^image\
+  const mime = imageMimeFor(name) || (typeof raw.mime === 'string' && /^image\//.test(raw.mime) && raw.mime) || '';
   return describeAttachment({
     name,
     size: buffer.length,

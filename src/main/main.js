@@ -371,7 +371,7 @@ function isInternalPageUrl(targetUrl) {
 
 function openExternalUrl(targetUrl) {
   const value = String(targetUrl || '');
-  if (!/^https?:\/\
+  if (!/^https?:\/\//i.test(value)) return;
   shell.openExternal(value).catch((error) => {
     console.error('[Esprin Nemo] 打开外部链接失败:', error);
   });

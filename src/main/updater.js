@@ -15,7 +15,7 @@ const releaseTagApi = (tag) => `https://api.github.com/repos/${UPDATE_REPO}/rele
 
 const GH_PROXY_PREFIX = 'https://gh-proxy.com/';
 
-const PROXYABLE_URL_PATTERN = /^https?:\/\/(?:[\w.-]+\.)?(?:github\.com|githubusercontent\.com)\
+const PROXYABLE_URL_PATTERN = /^https?:\/\/(?:[\w.-]+\.)?(?:github\.com|githubusercontent\.com)\//i;
 
 const USER_AGENT = 'EsprinNemo-Updater';
 const REQUEST_TIMEOUT_MS = 20000;

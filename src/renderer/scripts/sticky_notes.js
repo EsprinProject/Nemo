@@ -1,15 +1,5 @@
-/* 桌面便利贴（主窗口侧）：把笔记或待办贴到桌面上，并应答便利贴窗口的读写请求。
-   条目数据的读写全部发生在主窗口（State + 磁盘），便利贴窗口只负责显示与输入，
-   两个窗口因此不会各存一份内容、互相覆盖。
-
-   便利贴窗口本身由主进程创建与管理（见 src/main/sticky_notes.js），
-   这里只提供三件事：标题栏入口与设置分区、条目右键菜单的「贴到桌面」，以及桥接应答。 */
-
-// 已贴在桌面上的条目 id：主窗口改一条时据此判断要不要通知主进程，
-// 批量导入 / 恢复备份时因此不会对着没有便利贴的条目空发消息
 let stickyRefIds = new Set();
 
-// 应答主进程：请求带着 id 转发过来，必须原样带回，主进程据此兑现对应的 Promise
 function replyToStickyHost(payload) {
     try {
         ipcRenderer.send('sticky:reply', payload);
@@ -18,7 +8,6 @@ function replyToStickyHost(payload) {
     }
 }
 
-// 取一条条目给便利贴：加密未解锁的条目不给正文（取出来的是密文，显示没有意义）
 function stickyItemSnapshot(itemId) {
     const item = getItemById(itemId);
     if (!item) return { ok: false, reason: 'missing' };
@@ -31,13 +20,12 @@ function stickyItemSnapshot(itemId) {
             title: item.title || '',
             content: item.content || '',
             isDone: item.isDone === true,
-            // 废纸篓中的条目仍可显示，但不接受编辑
+
             readonly: item.isTrashed === true
         }
     };
 }
 
-// 便利贴写回的改动：与从编辑器写回走同一条保存链路，界面同步刷新
 function saveItemFromSticky(itemId, title, content, isDone) {
     const item = getItemById(itemId);
     if (!item) return { ok: false, reason: 'missing' };
@@ -45,7 +33,7 @@ function saveItemFromSticky(itemId, title, content, isDone) {
     if (isReadOnlyItem(item)) return { ok: false, reason: 'readonly' };
 
     const isActive = State.activeNoteId === itemId;
-    // 主窗口可能也开着这一条：先把它自己的改动落盘，避免稍后的自动保存用旧内容覆盖
+
     if (isActive) flushPendingSave();
 
     item.title = typeof title === 'string' ? title : item.title;
@@ -54,8 +42,7 @@ function saveItemFromSticky(itemId, title, content, isDone) {
     item.updatedAt = Date.now();
     saveItem(item);
 
-    // 正在看这一条时连编辑区一起刷新；否则只更新列表与标签页标题，尽量不打扰主窗口
-    if (isActive) renderApp();
+if (isActive) renderApp();
     else {
         renderListPanel();
         renderTabs();
@@ -75,7 +62,6 @@ function toggleDoneFromSticky(itemId, isDone) {
     return { ok: true, isDone: item.isDone };
 }
 
-// 主窗口内改动条目后，让贴在桌面上的那一份跟着刷新
 function notifyStickyItemSaved(item) {
     if (!item || !item.id || !stickyRefIds.has(item.id)) return;
     try {
@@ -88,24 +74,20 @@ function notifyStickyItemSaved(item) {
             readonly: isReadOnlyItem(item)
         });
     } catch (err) {
-        // 通知失败不影响本地保存
+
     }
 }
 
-// 条目被彻底删除后，贴在它上面的便利贴解除绑定（内容保留在便利贴上）
 function notifyStickyItemRemoved(itemId) {
     if (!itemId || !stickyRefIds.has(itemId)) return;
     stickyRefIds.delete(itemId);
     try {
         ipcRenderer.send('sticky:item-changed', { itemId, exists: false });
     } catch (err) {
-        // 同上
+
     }
 }
 
-/* ---------------- 标题栏入口 ---------------- */
-
-// 标题栏按钮展开的菜单：贴当前内容 / 选择笔记贴上 / 显示与收起全部
 function stickyMenuEntries() {
     const active = getActiveItem();
     const entries = [];
@@ -140,8 +122,7 @@ function showStickyMenu(anchor) {
         menu.appendChild(el);
     });
 
-    // 触发按钮在窗口右上角：菜单与按钮右对齐，向下展开
-    menu.style.left = '0px';
+menu.style.left = '0px';
     menu.style.top = '0px';
     menu.classList.remove('hidden');
 
@@ -163,7 +144,6 @@ function toggleStickyMenu(anchor) {
     else hideStickyMenu();
 }
 
-// 把当前打开的笔记或待办贴到桌面
 function stickActiveItemToDesktop() {
     const item = getActiveItem();
     if (!item) {
@@ -173,9 +153,6 @@ function stickActiveItemToDesktop() {
     stickItemToDesktop(item.id);
 }
 
-/* ---------------- 与主进程的交互 ---------------- */
-
-// 桌面便利贴的总开关，以及记录条数（设置分区据此显示）
 function applyStickyList(result) {
     const items = result && Array.isArray(result.items) ? result.items : [];
     stickyRefIds = new Set(items.map(item => item.refId).filter(Boolean));
@@ -198,15 +175,13 @@ function refreshStickyList() {
         });
 }
 
-// 贴上便利贴：弹出选择窗口选择一篇笔记贴到桌面上
 async function pickNoteToStick() {
     if (State.stickyNotes.enabled !== true) {
         showToast('桌面便利贴已关闭：可在「设置 → 系统 → 桌面便利贴」中开启');
         return;
     }
 
-    // 可供贴上桌面的笔记：排除废纸篓、隐藏、未解锁加密与已贴出的笔记
-    const candidates = State.notes.filter(note =>
+const candidates = State.notes.filter(note =>
         !note.isTrashed &&
         !isSecretHidden(note) &&
         note.locked !== true
@@ -231,8 +206,7 @@ async function pickNoteToStick() {
     const selectedTitle = (picked.selected && picked.selected[0]) || picked.value;
     if (!selectedTitle) return;
 
-    // 优先匹配标题完全相同的笔记，若无则按输入文本模糊查找
-    const matched = candidates.find(note => itemDisplayTitle(note) === selectedTitle)
+const matched = candidates.find(note => itemDisplayTitle(note) === selectedTitle)
         || candidates.find(note => (note.title || '').includes(selectedTitle));
 
     if (!matched) {
@@ -243,7 +217,6 @@ async function pickNoteToStick() {
     await stickItemToDesktop(matched.id);
 }
 
-// 把一条笔记或待办贴到桌面
 async function stickItemToDesktop(itemId) {
     if (State.stickyNotes.enabled !== true) {
         showToast('桌面便利贴已关闭：可在「设置 → 系统 → 桌面便利贴」中开启');
@@ -261,8 +234,7 @@ async function stickItemToDesktop(itemId) {
         return;
     }
 
-    // 正在编辑的条目先把改动落盘，贴出来的是最新内容
-    if (State.activeNoteId === itemId) flushPendingSave();
+if (State.activeNoteId === itemId) flushPendingSave();
 
     let result = null;
     try {
@@ -313,7 +285,6 @@ async function hideAllStickyNotes() {
     }
 }
 
-// 清除全部便利贴：记录与窗口一并移除，绑定条目的内容不受影响
 async function clearAllStickyNotes() {
     const confirmed = await showConfirm('移除全部桌面便利贴？', {
         title: '清除桌面便利贴',
@@ -335,8 +306,6 @@ async function clearAllStickyNotes() {
     }
 }
 
-// 外观（主题 / 风格 / 主题色 / 圆角 / 字体）变化后同步给便利贴窗口，
-// 与小本本走同一条广播路径（见 scripts/appearance.js 的 syncScratchpadAppearance）
 function syncStickyNotesAppearance() {
     try {
         ipcRenderer.send('sticky:appearance', {
@@ -351,8 +320,6 @@ function syncStickyNotesAppearance() {
     }
 }
 
-/* ---------------- 设置分区 ---------------- */
-
 function applyStickySettingsUI() {
     const config = State.stickyNotes;
     const enabled = document.getElementById('setting-sticky-enabled');
@@ -361,7 +328,6 @@ function applyStickySettingsUI() {
     if (color) color.value = config.color;
 }
 
-// 总开关：关闭时把所有便利贴收起（记录保留），重新开启时贴回来
 function setStickyEnabled(enabled) {
     State.stickyNotes.enabled = !!enabled;
     saveConfig();
@@ -405,8 +371,7 @@ function initStickyNoteSettings() {
     const btnClear = document.getElementById('btn-sticky-clear');
     if (btnClear) btnClear.onclick = () => clearAllStickyNotes();
 
-    // 标题栏按钮与它的菜单
-    const btn = document.getElementById('btn-sticky-notes');
+const btn = document.getElementById('btn-sticky-notes');
     if (btn) btn.onclick = () => toggleStickyMenu(btn);
 
     const menu = document.getElementById('sticky-notes-menu');
@@ -423,11 +388,9 @@ function initStickyNoteSettings() {
         };
     }
 
-    // 启动时与主进程对一次状态：记录里的便利贴数量与已贴出的条目清单
-    refreshStickyList();
+refreshStickyList();
 }
 
-/* 便利贴窗口发来的桥接请求（读取与写回条目） */
 ipcRenderer.on('sticky:get-item', (event, payload) => {
     const data = payload && typeof payload === 'object' ? payload : {};
     replyToStickyHost({ id: data.id, ...stickyItemSnapshot(data.itemId) });
@@ -446,5 +409,4 @@ ipcRenderer.on('sticky:toggle-done', (event, payload) => {
     replyToStickyHost({ id: data.id, ...toggleDoneFromSticky(data.itemId, data.isDone) });
 });
 
-// 主进程侧增删了便利贴（托盘与桌面右键菜单的入口）：重拉一次清单，设置里的张数跟着变
 ipcRenderer.on('sticky:list-changed', () => refreshStickyList());

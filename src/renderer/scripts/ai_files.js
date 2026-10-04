@@ -1,19 +1,13 @@
-/* AI 附件：把选择 / 拖拽 / 粘贴进来的文件与图片交给主进程导入，并负责它们在界面上的呈现。
-   文本附件的内容直接内联在消息里（体积小、可长期保留）；图片只保存 ai_files/ 下的文件名，
-   真正读取与 base64 内联发生在发起请求时（见 ai_service.js），避免对话记录被 base64 撑大。 */
-
-// 一条消息最多带几个附件
 const AI_ATTACHMENT_MAX = 6;
-// 选择/拖拽时一次最多处理多少个文件（防止整目录拖进来）
+
 const AI_ATTACHMENT_IMPORT_MAX = 12;
-// 没有真实路径时（粘贴、从网页拖拽）需要把字节读进内存，超过这个大小就不读
+
 const AI_ATTACHMENT_READ_MAX_BYTES = 10 * 1024 * 1024;
 
 function aiAttachmentsDir() {
     return path.join(DATA_DIR, 'ai_files');
 }
 
-// 图片附件存的是文件名，这里折算回绝对路径供请求与缩略图使用
 function resolveAiAttachmentPath(file) {
     return path.join(aiAttachmentsDir(), file);
 }
@@ -43,9 +37,6 @@ function aiAttachmentIcon(kind) {
     return icon;
 }
 
-// ---------- 导入 ----------
-
-// 统一入口：paths 由主进程读盘（选择文件、拖入文件），blobs 直接送字节（粘贴截图）
 async function importAiAttachments(payload) {
     let result = null;
     try {
@@ -60,7 +51,7 @@ async function importAiAttachments(payload) {
     const errors = (result && Array.isArray(result.errors)) ? result.errors : [];
 
     if (errors.length) {
-        // 一次最多提示两条，避免整批拖入时刷屏
+
         errors.slice(0, 2).forEach(message => showToast(message));
     }
     if (!attachments.length) return;
@@ -96,7 +87,6 @@ async function pickAiAttachments() {
     await importAiAttachments({ paths: picked.paths.slice(0, AI_ATTACHMENT_IMPORT_MAX) });
 }
 
-// Electron 新版本里 File.path 已被移除，改用 webUtils 拿真实路径
 function aiFilePathFromFile(file) {
     try {
         if (typeof file.path === 'string' && file.path) return file.path;
@@ -105,12 +95,11 @@ function aiFilePathFromFile(file) {
             return webUtils.getPathForFile(file) || '';
         }
     } catch (err) {
-        // 拿不到路径时退回读取字节
+
     }
     return '';
 }
 
-// 从剪贴板收集文件：既支持截图 / 复制的图片（files），也支持在资源管理器里复制文件后粘贴（items）
 function aiClipboardFiles(clipboardData) {
     const files = [];
     if (!clipboardData) return files;
@@ -134,7 +123,7 @@ async function importAiAttachmentsFromFiles(files) {
     for (const file of files.slice(0, AI_ATTACHMENT_IMPORT_MAX)) {
         const filePath = aiFilePathFromFile(file);
         if (filePath) {
-            // 有真实路径：交给主进程直接读盘，不经过 IPC 传字节
+
             paths.push(filePath);
             continue;
         }
@@ -142,7 +131,7 @@ async function importAiAttachmentsFromFiles(files) {
             skipped++;
             continue;
         }
-        // 没有真实路径（例如截图、网页拖拽）时退回读取字节
+
         try {
             const buffer = await file.arrayBuffer();
             blobs.push({
@@ -160,12 +149,10 @@ async function importAiAttachmentsFromFiles(files) {
     if (paths.length || blobs.length) await importAiAttachments({ paths, blobs });
 }
 
-// ---------- 待发送附件 ----------
-
 function removeAiPendingAttachment(id) {
     const target = State.aiPendingAttachments.find(item => item.id === id);
     State.aiPendingAttachments = State.aiPendingAttachments.filter(item => item.id !== id);
-    // 图片在导入时就已经落盘，移除时顺手删掉，免得在 ai_files/ 里留下没人引用的文件
+
     if (target && target.kind === 'image' && target.file) {
         releaseAiAttachments([{ attachments: [target] }]);
     }
@@ -189,8 +176,6 @@ function renderAiPendingAttachments() {
         strip.appendChild(createAiAttachmentChip(file, { onRemove: () => removeAiPendingAttachment(file.id) }));
     });
 }
-
-// ---------- 呈现 ----------
 
 function createAiAttachmentChip(file, options = {}) {
     const chip = document.createElement('div');
@@ -241,7 +226,6 @@ function createAiAttachmentChip(file, options = {}) {
     return chip;
 }
 
-// 消息里的附件：只展示，不提供移除（历史消息不可改）
 function createAiAttachmentList(attachments) {
     const box = document.createElement('div');
     box.className = 'ai-attach-list';
@@ -251,7 +235,6 @@ function createAiAttachmentList(attachments) {
     return box;
 }
 
-// 释放附件占用的磁盘文件（对话被删除或清空时调用）
 function releaseAiAttachments(messages) {
     const files = [];
     (Array.isArray(messages) ? messages : []).forEach((msg) => {
@@ -266,10 +249,6 @@ function releaseAiAttachments(messages) {
     });
 }
 
-// ---------- 初始化 ----------
-
-// 页面其它位置落到文件时，阻挠 Chromium 默认的“打开该文件”（会直接顶掉整个应用界面）
-// 只有携带 Files 的拖拽才拦，输入框内部的文本拖拽不受影响
 function guardDocumentFileDrop() {
     const blockFileDrag = (event) => {
         const types = event.dataTransfer && event.dataTransfer.types;
@@ -290,17 +269,14 @@ function initAiFiles() {
 
     guardDocumentFileDrop();
 
-    // 粘贴：剪贴板里是图片 / 文件时转成附件，纯文本粘贴保持默认行为
-    input.addEventListener('paste', async (event) => {
+input.addEventListener('paste', async (event) => {
         const files = aiClipboardFiles(event.clipboardData);
         if (!files.length) return;
         event.preventDefault();
         await importAiAttachmentsFromFiles(files);
     });
 
-    // 输入框上的文件拖拽：在目标阶段就拦掉“把路径插入正文”的默认行为，
-    // 导入仍然只由面板那一层统一处理（同一个事件，不会重复导入）
-    ['dragover', 'drop'].forEach((type) => {
+['dragover', 'drop'].forEach((type) => {
         input.addEventListener(type, (event) => {
             const types = event.dataTransfer && event.dataTransfer.types;
             if (!types || !Array.from(types).includes('Files')) return;
@@ -308,8 +284,7 @@ function initAiFiles() {
         });
     });
 
-    // 整个面板（含输入框）都是投放区，事件从输入框冒泡到这里
-    panel.addEventListener('dragover', (event) => {
+panel.addEventListener('dragover', (event) => {
         if (!isAiEnabled() || !event.dataTransfer) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = 'copy';
@@ -317,7 +292,7 @@ function initAiFiles() {
     });
 
     panel.addEventListener('dragleave', (event) => {
-        // 只在真正离开面板（或离开窗口）时取消高亮，避免掠过子元素时闪烁
+
         if (event.target === panel || !event.relatedTarget) panel.classList.remove('drop-active');
     });
 

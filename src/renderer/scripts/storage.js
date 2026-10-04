@@ -1,29 +1,19 @@
-/* 数据持久化：数据目录，以及 config.json / notes/{id}.md / todos/{id}.md / ai_chats/{id}.json 的读写。
-   笔记与待办的标题、文件夹、标签、置顶与废纸篓状态、创建/修改时间都以内嵌注释（EsprinData）写在
-   各自 .md 文件开头（待办仅多一行 isDone 完成状态，文件格式与笔记完全一致）；
-   AI 对话同样一份对话一个文件。三者都不再有独立的索引文件。
-
-   团队笔记（共享笔记）另有一个 shared/ 子目录：别人共享过来的笔记落在 shared/<所有者 id>/ 下，
-   与服务端那条投影路径一一对应，格式与本地笔记完全相同（见文件末尾的共享笔记一节）。 */
-
-// 数据目录可在设置页中更改，因此路径均为可变变量（切换位置后就地生效，无需重启）
 let DATA_DIR = resolveDataDir();
 let ITEMS_DIR = path.join(DATA_DIR, 'items');
 let NOTES_DIR = path.join(DATA_DIR, 'notes');
 let TODOS_DIR = path.join(DATA_DIR, 'todos');
-let ASSETS_DIR = path.join(DATA_DIR, 'assets');
+
 let AI_CHATS_DIR = path.join(DATA_DIR, 'ai_chats');
 let SHARED_DIR = path.join(DATA_DIR, 'shared');
 let CONFIG_FILE = path.join(DATA_DIR, 'config.json');
-// 旧版单文件记录：仅在启动时读一次用于迁移，完成后归档为同名 .bak
+
 let LEGACY_INDEX_FILE = path.join(DATA_DIR, 'index.json');
 let LEGACY_AI_CHATS_FILE = path.join(DATA_DIR, 'ai_chats.json');
 
-// 写入缓存：待写入内容与上次落盘完全一致时直接跳过，避免自动保存产生重复 I/O
-const savedItemFiles = new Map(); // itemId -> 已写入磁盘的完整文件内容（注释 + 正文）
-const savedNoteFiles = savedItemFiles; // 兼容旧引用
-const savedTodoFiles = savedItemFiles; // 兼容旧引用
-const savedAiChatFiles = new Map(); // chatId -> 已写入磁盘的对话 JSON
+const savedItemFiles = new Map();
+const savedNoteFiles = savedItemFiles;
+const savedTodoFiles = savedItemFiles;
+const savedAiChatFiles = new Map();
 let savedConfigJSON = null;
 
 function resetWriteCache() {
@@ -32,24 +22,22 @@ function resetWriteCache() {
     savedConfigJSON = null;
 }
 
-// 应用新的数据目录（主进程已完成校验/迁移/记录，这里只负责切换本进程使用的路径）
 function setDataPaths(dir) {
     DATA_DIR = dir;
     ITEMS_DIR = path.join(dir, 'items');
     NOTES_DIR = path.join(dir, 'notes');
     TODOS_DIR = path.join(dir, 'todos');
-    ASSETS_DIR = path.join(dir, 'assets');
+
     AI_CHATS_DIR = path.join(dir, 'ai_chats');
     SHARED_DIR = path.join(dir, 'shared');
     CONFIG_FILE = path.join(dir, 'config.json');
     LEGACY_INDEX_FILE = path.join(dir, 'index.json');
     LEGACY_AI_CHATS_FILE = path.join(dir, 'ai_chats.json');
-    // 换目录后旧缓存全部失效，否则会把新位置的首次写入误判为“无需写入”
+
     resetWriteCache();
     storageDirsReady = false;
 }
 
-// 生成10位的大小写英语+数字的随机ID
 function generateNoteId() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
@@ -59,7 +47,6 @@ function generateNoteId() {
     return result;
 }
 
-// 这个 id 是不是还有人在用：内存里的条目与磁盘上的 items/、notes/、todos/ 文件都算
 function itemIdTaken(id) {
     if (!id) return true;
     if (State.notes.some(n => n.id === id) || State.todos.some(t => t.id === id)) return true;
@@ -68,9 +55,6 @@ function itemIdTaken(id) {
         || fs.existsSync(path.join(TODOS_DIR, `${id}.md`));
 }
 
-// 生成唯一的条目 id：优先用服务端回收池里腾出来的 ID（被删掉的那一条腾出的 ID
-// 会重新落到新建的条目上，池子在 scripts/sync_server.js 里维护），
-// 池子空或者候选不巧本机还在用就退回随机 ID。
 function generateUniqueItemId(kind) {
     const recycled = typeof takeRecycledItemId === 'function' ? takeRecycledItemId(kind) : '';
     if (recycled && !itemIdTaken(recycled)) return recycled;
@@ -80,15 +64,64 @@ function generateUniqueItemId(kind) {
     return id;
 }
 
-// 目录只需确保一次：自动保存频繁调用，避免每次写入都做一轮同步 stat
 let storageDirsReady = false;
+
+function itemAssetsDir(itemId) {
+    const safeName = String(itemId || '').replace(/[\\/:*?"<>|]/g, '_');
+    return path.join(ITEMS_DIR, safeName);
+}
+
+function ensureItemAssetsDir(itemId) {
+    const dir = itemAssetsDir(itemId);
+    try {
+        fs.mkdirSync(dir, { recursive: true });
+    } catch (err) {
+        console.error('创建条目附件目录失败:', err);
+    }
+    return dir;
+}
+
+function listItemAssetFiles(itemId) {
+    const dir = itemAssetsDir(itemId);
+    const result = [];
+    try {
+        if (!fs.existsSync(dir)) return result;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        entries.forEach((entry) => {
+            if (!entry.isFile() || isStaleTempFile(entry.name)) return;
+            try {
+                const filePath = path.join(dir, entry.name);
+                const stat = fs.statSync(filePath);
+                result.push({
+                    name: entry.name,
+                    size: stat.size,
+                    mtimeMs: stat.mtimeMs
+                });
+            } catch (err) {
+
+            }
+        });
+    } catch (err) {
+        console.error('列出条目附件失败:', err);
+    }
+    result.sort((a, b) => a.name.localeCompare(b.name));
+    return result;
+}
+
+function resolveItemAssetPath(itemId, filename) {
+    return path.join(itemAssetsDir(itemId), String(filename || ''));
+}
+
+function itemAssetRelativePath(itemId, filename) {
+    return String(filename || '');
+}
 
 function ensureStorageDirs() {
     if (storageDirsReady) return;
     try {
         fs.mkdirSync(DATA_DIR, { recursive: true });
         fs.mkdirSync(ITEMS_DIR, { recursive: true });
-        fs.mkdirSync(ASSETS_DIR, { recursive: true });
+
         fs.mkdirSync(AI_CHATS_DIR, { recursive: true });
         storageDirsReady = true;
     } catch (err) {
@@ -96,22 +129,18 @@ function ensureStorageDirs() {
     }
 }
 
-// 原子写入用的临时文件后缀：不会命中笔记 / 待办 / 对话的文件名规则
 const TEMP_FILE_SUFFIX = '.tmp';
-// rename 失败后的重试等待（毫秒）：仅用于极端情况，正常路径不会走到
+
 const RENAME_RETRY_DELAYS = [15, 40];
 
-// 同步等待：仅在 rename 重试时使用，且发生在保存失败这一罕见路径上
 function sleepSync(ms) {
     try {
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
     } catch (err) {
-        // 不支持共享内存时退化为不等待
+
     }
 }
 
-/* Windows 上杀软与索引器可能瞬时占用刚写出的文件，使 rename 短时间失败。
-   这里对可重试的错误码等一小会儿再试，避免一次自动保存被误判为失败。 */
 function renameWithRetry(from, to) {
     for (let attempt = 0; ; attempt++) {
         try {
@@ -125,41 +154,28 @@ function renameWithRetry(from, to) {
     }
 }
 
-/* 原子写入：先写同目录下的临时文件，再改名替换目标文件。
-   直接覆盖写时，若进程被强杀或断电，原文件会被截断成半截内容；
-   而笔记的元数据与正文同处一份文件（待办、对话与配置同理），损坏即整条记录报废。
-   同一分区内的 rename 是原子操作，因此目标文件要么是旧内容、要么是新内容。 */
 function writeFileAtomic(filePath, text) {
     const tempPath = `${filePath}${TEMP_FILE_SUFFIX}`;
     try {
         fs.writeFileSync(tempPath, text, 'utf8');
         renameWithRetry(tempPath, filePath);
-        // 告诉主进程「这份文件刚变了」：自建同步会把这次改动变成一条操作推给服务器
+
         notifyRemoteWrite(filePath);
     } catch (err) {
-        // 失败时清掉临时文件，避免在数据目录里留下垃圾
+
         try {
             if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
         } catch (cleanupError) {
-            // 清理失败不影响错误上报
+
         }
         throw err;
     }
 }
 
-// 上一次原子写入中途被打断时可能留下临时文件：扫描时静默跳过。
-// 这里只跳过、不删除——万一它比目标文件更新，内容不至于因为一次扫描就丢掉。
 function isStaleTempFile(fileName) {
     return typeof fileName === 'string' && fileName.endsWith(TEMP_FILE_SUFFIX);
 }
 
-/* ---------------- 自建同步的写穿通知 ----------------
-   同步采用操作日志模型（见 src/main/sync_server.js）：本地每一次写入与删除都要变成一条操作
-   （put / del）记进待推送队列，其中「删除」本身就是一条操作——这样别的设备重放时
-   只会把本地那份删掉，而不会把「文件不存在」当成「缺文件」又补回来。
-   这里只负责发个通知（send，不等回复），要不要同步、什么时候推由主进程决定。 */
-
-// 数据目录内的相对路径（正斜杠）：数据目录外的路径一律不参与同步
 function dataRelativePath(filePath) {
     try {
         const relative = path.relative(DATA_DIR, filePath).replace(/\\/g, '/');
@@ -173,11 +189,11 @@ function dataRelativePath(filePath) {
 function notifyRemoteWrite(filePath) {
     try {
         const relative = dataRelativePath(filePath);
-        // 临时文件不是数据的一部分，不推
+
         if (!relative || isStaleTempFile(relative)) return;
         ipcRenderer.send('sync:push', { path: relative });
     } catch (err) {
-        // 通知失败不影响本地保存
+
     }
 }
 
@@ -185,39 +201,23 @@ function notifyRemoteDelete(filePath) {
     try {
         const relative = dataRelativePath(filePath);
         if (!relative || isStaleTempFile(relative) || relative.endsWith('.bak')) return;
-        // 删除同样是一条操作：它会被记进待推送队列，而不是让别的设备把文件补回来
+
         ipcRenderer.send('sync:remove', { path: relative });
-        // 彻底删除之后，这个 ID 本地立刻就能再用：下一次新建的条目会直接用它
+
         if (typeof releaseRecycledItemId === 'function') releaseRecycledItemId(relative);
     } catch (err) {
-        // 同上
+
     }
 }
 
-/* ---------------- 笔记文件：内嵌元数据注释 + Markdown 正文 ----------------
-   文件形如：
-   <!--EsprinData
-       title: "课堂记录"
-       folder:
-       tags: []
-       isPinned: false
-       isTrashed: false
-       createdAt: 1789837475335
-       updatedAt: 1789840300633
-   -->
-
-   正文…（这里的空行分隔注释与正文） */
-
 const NOTE_META_HEADER = 'EsprinData';
-// 元数据注释必须位于文件开头；--> 需独占行尾，避免正文里出现的 --> 被误当成注释结束
+
 const NOTE_META_BLOCK_PATTERN = /^<!--[ \t]*EsprinData[ \t]*\r?\n([\s\S]*?)(?:\r?\n)?[ \t]*-->[ \t]*(?=\r?\n|$)/;
-// 文件名即笔记 id（随机 10 位大小写字母+数字）
+
 const NOTE_FILE_PATTERN = /^([A-Za-z0-9_-]{1,64})\.md$/i;
-// 没有标题时用正文首个非空行兜底的长度上限
+
 const NOTE_TITLE_MAX_LENGTH = 60;
 
-// 解析 .md 文件：返回 { meta, content }；
-// 没有注释（例如手工放进 notes/ 的 Markdown）时 meta 为 null，整份文件都算正文
 function parseNoteFile(raw) {
     const text = String(raw == null ? '' : raw).replace(/^\uFEFF/, '');
     const matched = text.match(NOTE_META_BLOCK_PATTERN);
@@ -231,16 +231,14 @@ function parseNoteFile(raw) {
         meta[trimmed.slice(0, separator).trim()] = trimmed.slice(separator + 1).trim();
     });
 
-    // 注释与正文之间空一行：最多吃掉两个换行，正文自身的首行空行仍然保留
-    let content = text.slice(matched[0].length);
+let content = text.slice(matched[0].length);
     const gap = content.match(/^(?:\r?\n){1,2}/);
     if (gap) content = content.slice(gap[0].length);
-    // 正文全为空白时统一存为空字符串，避免来回写入时凭空多出空行
+
     if (!content.trim()) content = '';
     return { meta, content };
 }
 
-// 元数据写入规则：空字符串写成空值（如 folder:），其余字符串加双引号转义，数组按 JSON 写
 function formatNoteMetaValue(value) {
     if (Array.isArray(value)) return JSON.stringify(value);
     if (typeof value === 'boolean') return value ? 'true' : 'false';
@@ -249,15 +247,11 @@ function formatNoteMetaValue(value) {
     return text ? JSON.stringify(text) : '';
 }
 
-// 一行元数据：键后紧跟冒号，有值时以单个空格分隔（与空值形式 folder: 保持一致）
 function formatNoteMetaLine(key, value) {
     const text = formatNoteMetaValue(value);
     return text ? `    ${key}: ${text}` : `    ${key}:`;
 }
 
-// 生成条目文件内容：元数据注释 + 空行 + 正文（正文为空时只留注释）。
-// kind: 'note' | 'todo'，写入 type: "note" 或 type: "todo"
-// extraLines 用于笔记之外的附加字段（待办的 isDone），写法与其余元数据行保持一致。
 function serializeItemFile(item, kind = 'note', extraLines = []) {
     const folder = item.folder && item.folder !== '默认' ? item.folder : '';
     const itemType = kind || (item && item.isDone !== undefined ? 'todo' : 'note');
@@ -269,7 +263,7 @@ function serializeItemFile(item, kind = 'note', extraLines = []) {
         formatNoteMetaLine('tags', Array.isArray(item.tags) ? item.tags : []),
         formatNoteMetaLine('isPinned', !!item.isPinned),
         formatNoteMetaLine('isTrashed', !!item.isTrashed),
-        // 秘密本：隐藏与加密状态。只在这两项确实成立时才写出对应行
+
         ...(item.isHidden === true ? [formatNoteMetaLine('isHidden', true)] : []),
         ...(item.locked === true ? [formatNoteMetaLine('isLocked', true)] : []),
         ...extraLines,
@@ -277,25 +271,21 @@ function serializeItemFile(item, kind = 'note', extraLines = []) {
         formatNoteMetaLine('updatedAt', Number(item.updatedAt) || Date.now()),
         '-->'
     ].join('\n');
-    // 正文：带密码的条目在这里现做密文（见 scripts/secret.js 的 serializeSecretBody）。
-    // 任何保存路径都经这里取正文，明文因此不会落到磁盘上
-    const content = typeof serializeSecretBody === 'function'
+
+const content = typeof serializeSecretBody === 'function'
         ? serializeSecretBody(item)
         : String(item.content || '');
     return content ? `${header}\n\n${content}` : `${header}\n`;
 }
 
-// 笔记文件
 function serializeNoteFile(note) {
     return serializeItemFile(note, 'note');
 }
 
-// 待办文件
 function serializeTodoFile(todo) {
     return serializeItemFile(todo, 'todo', [formatNoteMetaLine('isDone', !!todo.isDone)]);
 }
 
-// 注释里的字符串：优先按 JSON 字符串解析（写入时即为该格式），其次按原文，空值返回空字符串
 function readNoteMetaString(raw) {
     const value = typeof raw === 'string' ? raw.trim() : '';
     if (!value) return '';
@@ -304,21 +294,19 @@ function readNoteMetaString(raw) {
             const parsed = JSON.parse(value);
             return typeof parsed === 'string' ? parsed : '';
         } catch (err) {
-            // 引号不成对时按去掉首尾引号的原文处理
+
             return value.replace(/^"+|"+$/g, '');
         }
     }
     return value;
 }
 
-// 注释里的数字：非法值一律回退到 fallback
 function readNoteMetaNumber(raw, fallback) {
     if (raw === undefined || raw === null || raw === '') return fallback;
     const value = Number(typeof raw === 'string' ? raw.trim() : raw);
     return Number.isFinite(value) ? Math.round(value) : fallback;
 }
 
-// 注释里的布尔值：只有明确的真值才算真，其余回退到 fallback
 function readNoteMetaBoolean(raw, fallback) {
     if (raw === undefined || raw === null || raw === '') return !!fallback;
     const value = String(raw).trim().toLowerCase();
@@ -327,7 +315,6 @@ function readNoteMetaBoolean(raw, fallback) {
     return !!fallback;
 }
 
-// 标签去空白、去 # 前缀、去重
 function normalizeNoteTags(raw) {
     const tags = [];
     (Array.isArray(raw) ? raw : []).forEach((item) => {
@@ -337,7 +324,6 @@ function normalizeNoteTags(raw) {
     return tags;
 }
 
-// 注释里的标签：写入时为 JSON 数组（旧索引里已是数组），同时兼容 "a, b"、"a b" 这类手写形式
 function readNoteMetaTags(raw) {
     if (Array.isArray(raw)) return normalizeNoteTags(raw);
     const value = typeof raw === 'string' ? raw.trim() : '';
@@ -347,20 +333,18 @@ function readNoteMetaTags(raw) {
             const parsed = JSON.parse(value);
             if (Array.isArray(parsed)) return normalizeNoteTags(parsed);
         } catch (err) {
-            // 落到下面的分隔符形式
+
         }
     }
     return normalizeNoteTags(value.split(/[,，\s]+/));
 }
 
-// 没有标题时用正文首个非空行兜底：去掉 Markdown 前缀，过长则截断
 function deriveNoteTitle(content) {
     const line = String(content || '').split('\n').map(item => item.trim()).find(item => item.length) || '';
     const cleaned = line.replace(/^#{1,6}\s*/, '').replace(/^[-*+>]\s+/, '').trim();
     return cleaned.length > NOTE_TITLE_MAX_LENGTH ? cleaned.slice(0, NOTE_TITLE_MAX_LENGTH) : cleaned;
 }
 
-// 自定义文件夹列表规范化：去空白、去重、剔除空名与“默认”
 function normalizeCustomFolders(raw) {
     const folders = [];
     (Array.isArray(raw) ? raw : []).forEach((item) => {
@@ -371,8 +355,6 @@ function normalizeCustomFolders(raw) {
     return folders;
 }
 
-// 扫描条目目录（items/）或旧版 notes/、todos/ 目录，逐份读出原始文本并解析内嵌元数据；
-// 返回 { files, skipped }
 function readItemFiles(dir, label) {
     const files = [];
     let skipped = 0;
@@ -380,14 +362,14 @@ function readItemFiles(dir, label) {
     try {
         entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch (err) {
-        // 旧版 notes/、todos/ 在条目统一到 items/ 之后本就不存在，缺目录不算异常
+
         if (!err || err.code !== 'ENOENT') console.error(`读取${label}目录失败:`, err);
         return { files, skipped };
     }
 
     entries.forEach((entry) => {
         if (!entry.isFile()) return;
-        // 原子写入中途被打断留下的临时文件：静默跳过，不当成“异常文件”报警
+
         if (isStaleTempFile(entry.name)) return;
         const matched = entry.name.match(NOTE_FILE_PATTERN);
         if (!matched) {
@@ -429,7 +411,6 @@ function readAllItemFiles() {
     return readItemFiles(ITEMS_DIR, '条目');
 }
 
-// 条目的具体存储位置：共享笔记在 shared/ 下，本地笔记与待办统统在 items/ 下
 function itemFilePath(item) {
     if (item && item.shared) return sharedItemPath(item.shared.owner, item.shared.noteId);
     const id = typeof item === 'string' ? item : (item && item.id);
@@ -443,24 +424,23 @@ function buildNoteFromFile(file, legacy) {
     const meta = file.meta || {};
     const fallback = legacy || {};
     const statTime = file.stat && Number.isFinite(file.stat.mtimeMs) ? Math.round(file.stat.mtimeMs) : Date.now();
-    // 取值优先级：文件注释 > 旧索引记录 > 兜底；注释里写了但为空即按空处理，不回头找旧索引
+
     const pick = (key) => (meta[key] !== undefined ? meta[key] : fallback[key]);
 
     const createdAt = readNoteMetaNumber(meta.createdAt, readNoteMetaNumber(fallback.createdAt, statTime));
 
     return {
         id: file.id,
-        // 完全没有注释的文件（例如手工放进 notes/ 的 Markdown）用正文首个非空行当标题
+
         title: readNoteMetaString(pick('title')) || (file.hasMeta ? '' : deriveNoteTitle(file.content)),
         folder: readNoteMetaString(pick('folder')),
         tags: readNoteMetaTags(pick('tags')),
         isPinned: readNoteMetaBoolean(pick('isPinned'), false),
         isTrashed: readNoteMetaBoolean(pick('isTrashed'), false),
-        // 秘密本：隐藏状态按元数据取值；加密状态还要正文确实是一份信封才算数
-        // （元数据写着加密、正文却是明文的脏数据按未加密处理，免得把明文当成密文解不开）
-        isHidden: readNoteMetaBoolean(pick('isHidden'), false),
+
+isHidden: readNoteMetaBoolean(pick('isHidden'), false),
         locked: readNoteMetaBoolean(meta.isLocked, false) && isSecretEnvelope(file.content),
-        // 会话内的解锁标记：从磁盘读到的条目一律是未解锁的
+
         unlocked: false,
         createdAt,
         updatedAt: readNoteMetaNumber(meta.updatedAt, readNoteMetaNumber(fallback.updatedAt, Math.max(createdAt, statTime))),
@@ -468,19 +448,10 @@ function buildNoteFromFile(file, legacy) {
     };
 }
 
-/* ---------------- 团队笔记（共享笔记） ----------------
-
-   别人共享过来的笔记落在 shared/<所有者 id>/<条目 id>.md：每份文件对应服务端日志里
-   一条同名的投影操作，内容与所有者那份始终一致（见 src/main/sync_server.js 的共享一节）。
-   条目 id 带 shared: 前缀，与本地随机 id 各成一套，不会撞上；写回去的改动与服务端那条
-   投影路径同名，服务端据此改写路径落进所有者的日志。 */
-
-// 共享笔记的客户端条目 id：shared:<所有者 id>:<条目 id>
 function sharedItemId(owner, noteId) {
     return `shared:${owner}:${noteId}`;
 }
 
-// 客户端条目 id → 共享来源；不是共享笔记时返回 null
 function parseSharedItemId(itemId) {
     const matched = /^shared:([A-Za-z0-9_-]{1,64}):([A-Za-z0-9_-]{1,64})$/.exec(String(itemId || ''));
     return matched ? { owner: matched[1], noteId: matched[2] } : null;
@@ -490,10 +461,8 @@ function sharedItemPath(owner, noteId) {
     return path.join(SHARED_DIR, owner, `${noteId}.md`);
 }
 
-// 所有者 id 会当目录名用，只接受服务端允许的字符（与服务端的路径规则一致）
 const SHARED_OWNER_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
-// 扫描 shared/ 下各所有者的目录，逐份读出原始文本并解析内嵌元数据
 function readSharedNoteFiles() {
     const files = [];
     let skipped = 0;
@@ -502,7 +471,7 @@ function readSharedNoteFiles() {
     try {
         owners = fs.readdirSync(SHARED_DIR, { withFileTypes: true });
     } catch (err) {
-        // 还没有共享过：shared/ 不存在，这不是异常
+
         return { files, skipped };
     }
 
@@ -548,9 +517,6 @@ function readSharedNoteFiles() {
     return { files, skipped };
 }
 
-/* 拼出一份共享笔记：元数据与正文用与本地笔记完全相同的读法，只多记一条来源。
-   文件夹照原样保留——本地没有这个文件夹也不回退到「默认」，否则每次载入都会把它改写一遍，
-   等于替所有者改了笔记。 */
 function buildSharedNoteFromFile(file) {
     const note = buildNoteFromFile(file, null);
     note.id = sharedItemId(file.owner, file.id);
@@ -558,12 +524,10 @@ function buildSharedNoteFromFile(file) {
     return note;
 }
 
-// 笔记文件的位置：共享过来的在 shared/<所有者 id>/ 下，其余在 items/ 下
 function noteFilePath(note) {
     return itemFilePath(note);
 }
 
-// 拼出一份完整的待办：文件格式与笔记一致，仅多一个 isDone 完成状态
 function buildTodoFromFile(file) {
     const meta = file.meta || {};
     const statTime = file.stat && Number.isFinite(file.stat.mtimeMs) ? Math.round(file.stat.mtimeMs) : Date.now();
@@ -571,14 +535,14 @@ function buildTodoFromFile(file) {
 
     return {
         id: file.id,
-        // 完全没有注释的文件（例如手工放进 todos/ 的 Markdown）用正文首个非空行当标题
+
         title: readNoteMetaString(meta.title) || (file.hasMeta ? '' : deriveNoteTitle(file.content)),
         folder: readNoteMetaString(meta.folder),
         tags: readNoteMetaTags(meta.tags),
         isPinned: readNoteMetaBoolean(meta.isPinned, false),
         isTrashed: readNoteMetaBoolean(meta.isTrashed, false),
         isDone: readNoteMetaBoolean(meta.isDone, false),
-        // 秘密本：与笔记同一套判定（见 buildNoteFromFile）
+
         isHidden: readNoteMetaBoolean(meta.isHidden, false),
         locked: readNoteMetaBoolean(meta.isLocked, false) && isSecretEnvelope(file.content),
         unlocked: false,
@@ -588,7 +552,6 @@ function buildTodoFromFile(file) {
     };
 }
 
-// 读取旧版索引 index.json：只用于把元数据并入各笔记文件，读完即归档
 function readLegacyIndex() {
     const result = { found: false, folders: [], notes: [] };
     try {
@@ -614,7 +577,6 @@ function readLegacyIndex() {
     return result;
 }
 
-// 旧格式文件在迁移完成后改名保留（不直接删除，便于万一回退）
 function archiveLegacyFile(file, note) {
     try {
         const backup = `${file}.bak`;
@@ -628,12 +590,10 @@ function archiveLegacyFile(file, note) {
     }
 }
 
-// AI 对话记录：单条对话保留的消息数上限，超出后丢弃最早的（避免文件无限膨胀）
 const AI_CHAT_MESSAGE_LIMIT = 120;
-// 最多保留的对话数，超出后清理最久未使用的
+
 const AI_CHAT_LIMIT = 50;
 
-// 单条消息规范化：既没有正文也没有错误提示的空消息没有保存价值
 function normalizeAiToolCall(raw) {
     if (!raw || typeof raw !== 'object') return null;
     const name = typeof raw.name === 'string' ? raw.name.trim() : '';
@@ -645,7 +605,6 @@ function normalizeAiToolCall(raw) {
     };
 }
 
-// 消息附件的规范化：文本附件带内联内容，图片附件只带 ai_files/ 下的文件名
 function normalizeAiAttachments(raw) {
     if (!Array.isArray(raw)) return [];
     const attachments = [];
@@ -656,7 +615,7 @@ function normalizeAiAttachments(raw) {
 
         const file = typeof item.file === 'string' ? item.file.trim() : '';
         const content = typeof item.content === 'string' ? item.content : '';
-        // 图片必须有文件名、文本必须有内容，否则这条附件已经不可用
+
         if (kind === 'image' && !/^[A-Za-z0-9_.-]{1,80}$/.test(file)) return;
         if (kind === 'text' && !content) return;
 
@@ -681,8 +640,7 @@ function normalizeAiChatMessage(raw) {
     if (!raw || typeof raw !== 'object') return null;
     const createdAt = Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now();
 
-    // 工具执行结果：与 assistant 的 toolCalls 成对出现，必须保住 toolCallId
-    if (raw.role === 'tool') {
+if (raw.role === 'tool') {
         const toolCallId = typeof raw.toolCallId === 'string' ? raw.toolCallId.trim() : '';
         if (!toolCallId) return null;
         const message = {
@@ -695,7 +653,7 @@ function normalizeAiChatMessage(raw) {
         };
         if (typeof raw.summary === 'string' && raw.summary) message.summary = raw.summary;
         if (typeof raw.detail === 'string' && raw.detail) message.detail = raw.detail;
-        // stepId 仅用于在本次运行内找到撤销快照
+
         if (typeof raw.stepId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(raw.stepId)) message.stepId = raw.stepId;
         return message;
     }
@@ -709,7 +667,7 @@ function normalizeAiChatMessage(raw) {
         ? raw.toolCalls.map(normalizeAiToolCall).filter(Boolean)
         : [];
     const attachments = normalizeAiAttachments(raw.attachments);
-    // 只带附件不带文字的消息也算有效内容
+
     if (!content && !error && !toolCalls.length && !attachments.length) return null;
 
     const message = { role, content, createdAt };
@@ -724,7 +682,6 @@ function normalizeAiChatMessage(raw) {
     return message;
 }
 
-// 单个对话规范化：ID 非法或重复的直接丢弃，消息超限时只保留最近的一批
 function normalizeAiConversation(raw, seenIds) {
     if (!raw || typeof raw !== 'object') return null;
     const id = typeof raw.id === 'string' ? raw.id.trim() : '';
@@ -751,7 +708,7 @@ function normalizeAiChats(raw) {
     const conversations = (Array.isArray(source.conversations) ? source.conversations : [])
         .map(item => normalizeAiConversation(item, seenIds))
         .filter(Boolean)
-        // 最近使用的排在前面，新建对话时 unshift 即可保持同一顺序
+
         .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
         .slice(0, AI_CHAT_LIMIT);
 
@@ -761,10 +718,8 @@ function normalizeAiChats(raw) {
     return { conversations, activeId };
 }
 
-// 文件名即对话 id（新建时为随机 10 位；兼容旧版带 chat 前缀的 id）
 const AI_CHAT_FILE_PATTERN = /^([A-Za-z0-9_-]{1,64})\.json$/;
 
-// 读取 ai_chats/ 下的全部对话文件；返回 { conversations, raws }，raws 用于判断文件是否需要写回
 function readAiChatFiles() {
     const conversations = [];
     const raws = new Map();
@@ -779,7 +734,7 @@ function readAiChatFiles() {
 
     entries.forEach((entry) => {
         if (!entry.isFile()) return;
-        // 原子写入中途被打断留下的临时文件：静默跳过
+
         if (isStaleTempFile(entry.name)) return;
         const matched = entry.name.match(AI_CHAT_FILE_PATTERN);
         if (!matched) {
@@ -789,7 +744,7 @@ function readAiChatFiles() {
         const filePath = path.join(AI_CHATS_DIR, entry.name);
         try {
             const raw = fs.readFileSync(filePath, 'utf8');
-            // 文件名即 id：文件被改名后以文件名为准
+
             const chat = normalizeAiConversation({ ...JSON.parse(raw.trim() || '{}'), id: matched[1] }, seenIds);
             if (!chat) return;
             conversations.push(chat);
@@ -802,7 +757,6 @@ function readAiChatFiles() {
     return { conversations, raws };
 }
 
-// 对话文件内容：对话本体（id 与文件名一致，消息保留最近的一批）
 function serializeAiChat(chat) {
     return `${JSON.stringify({
         id: chat.id,
@@ -813,10 +767,9 @@ function serializeAiChat(chat) {
     }, null, 2)}\n`;
 }
 
-// 保存单份对话到 data/ai_chats/{id}.json（内容未变时直接跳过写入）
 function saveAiChat(chat) {
     if (!chat || !chat.id) return;
-    // 生成期间被删掉的对话不再写回磁盘，否则会凭空多出一份
+
     if (Array.isArray(State.aiConversations) && !State.aiConversations.includes(chat)) return;
     ensureStorageDirs();
     try {
@@ -829,14 +782,13 @@ function saveAiChat(chat) {
     }
 }
 
-// 删除对话文件，并同步丢弃写入缓存
 function deleteAiChatFile(chatId) {
     savedAiChatFiles.delete(chatId);
     try {
         const filePath = path.join(AI_CHATS_DIR, `${chatId}.json`);
         if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
-            // 使用模式：本地删了，服务器上那份也要跟着删
+
             notifyRemoteDelete(filePath);
         }
     } catch (err) {
@@ -844,7 +796,6 @@ function deleteAiChatFile(chatId) {
     }
 }
 
-// 读取旧版单文件记录（ai_chats.json）：仅在拆分到 ai_chats/ 时用一次
 function readLegacyAiChats() {
     const result = { found: false, conversations: [], activeId: '' };
     try {
@@ -861,16 +812,13 @@ function readLegacyAiChats() {
     return result;
 }
 
-// 载入全部对话：先读 ai_chats/，再把旧版单文件里的记录拆成一份份文件
-// activeIdFromConfig 来自 config.json（当前选中的对话），旧文件里的记录作为兼容兑底
 function loadAiChats(activeIdFromConfig) {
     const legacy = readLegacyAiChats();
     const scanned = readAiChatFiles();
     const conversations = scanned.conversations;
     const raws = scanned.raws;
 
-    // 旧记录已有对应文件的以文件为准，其余补进内存并写成独立文件
-    const existingIds = new Set(conversations.map(chat => chat.id));
+const existingIds = new Set(conversations.map(chat => chat.id));
     let merged = 0;
     legacy.conversations.forEach((chat) => {
         if (existingIds.has(chat.id)) return;
@@ -880,15 +828,13 @@ function loadAiChats(activeIdFromConfig) {
     });
     conversations.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
-    // 超出上限时丢弃最久未使用的对话（与旧版一致的策略），磁盘上的文件一并删除
-    const dropped = conversations.splice(AI_CHAT_LIMIT);
+const dropped = conversations.splice(AI_CHAT_LIMIT);
     dropped.forEach((chat) => {
         console.warn(`对话记录超出 ${AI_CHAT_LIMIT} 份上限，已清理《${chat.title || '未命名对话'}》`);
         deleteAiChatFile(chat.id);
     });
 
-    // 与磁盘原文比对后写回：新并入的、格式过时的对话在这里落盘
-    let rewriteFailed = 0;
+let rewriteFailed = 0;
     conversations.forEach((chat) => {
         const json = serializeAiChat(chat);
         savedAiChatFiles.set(chat.id, json);
@@ -901,8 +847,7 @@ function loadAiChats(activeIdFromConfig) {
         }
     });
 
-    // 对话都已落到各自的文件，旧单文件即可归档
-    const legacyArchived = (legacy.found && !rewriteFailed) ? archiveLegacyFile(LEGACY_AI_CHATS_FILE, '对话迁移：已把 ai_chats.json 中的对话拆分为 ai_chats/ 下的一份份文件') : false;
+const legacyArchived = (legacy.found && !rewriteFailed) ? archiveLegacyFile(LEGACY_AI_CHATS_FILE, '对话迁移：已把 ai_chats.json 中的对话拆分为 ai_chats/ 下的一份份文件') : false;
 
     const candidates = [activeIdFromConfig, legacy.activeId];
     const activeId = candidates.find(id => conversations.some(chat => chat.id === id))
@@ -920,7 +865,6 @@ function loadAiChats(activeIdFromConfig) {
     };
 }
 
-// 字体配置规范化：容忍缺失/脏数据，统一为四个字符串字段
 function normalizeFonts(raw) {
     const source = (raw && typeof raw === 'object') ? raw : {};
     const pick = (key) => (typeof source[key] === 'string' ? source[key].trim() : '');
@@ -932,16 +876,14 @@ function normalizeFonts(raw) {
     };
 }
 
-// AI 配置规范化：容忍缺失/脏数据，范围与数量都夹在合理区间内。
-// 注意这里没有 apiKey：密钥由主进程存进系统密钥链，不随 config.json 落盘，也不会进入渲染进程。
 function normalizeAiConfig(raw) {
     const source = (raw && typeof raw === 'object') ? raw : {};
     const pick = (key) => (typeof source[key] === 'string' ? source[key].trim() : '');
     const maxNotes = Number(source.maxNotes);
     return {
-        // 总开关：旧配置里还没有该字段时视为开启，保证升级前后的行为一致
+
         enabled: source.enabled === undefined ? true : !!source.enabled,
-        // Agent 模式：允许模型调用工具改写笔记，默认关闭
+
         agentMode: !!source.agentMode,
         baseUrl: pick('baseUrl'),
         model: pick('model'),
@@ -951,8 +893,6 @@ function normalizeAiConfig(raw) {
     };
 }
 
-/* 随口记（语音转文本）配置规范化：入口开关与识别语言。
-   识别只有一条通道——Windows 自带的桌面识别引擎，在本机完成，音频不出本机 */
 function normalizeVoiceConfig(raw) {
     const source = (raw && typeof raw === 'object') ? raw : {};
     return {
@@ -961,39 +901,31 @@ function normalizeVoiceConfig(raw) {
     };
 }
 
-/* 自建同步的自动同步间隔：预设（秒）与自定义秒数的范围，
-   取值与 src/main/sync_server.js 的 AUTO_SYNC_* 保持一致。
-   没有「每次启动应用时」这一项：只要同步开着，每次启动都会同步一次，与自动同步的设置无关。 */
 const SYNC_AUTO_SYNC_PRESETS = { off: 0, '5s': 5, '1m': 60, '5m': 300 };
 const SYNC_AUTO_SYNC_VALUES = Object.keys(SYNC_AUTO_SYNC_PRESETS).concat('custom');
 const SYNC_AUTO_SYNC_MIN_SECONDS = 5;
 const SYNC_AUTO_SYNC_MAX_SECONDS = 24 * 60 * 60;
 const SYNC_AUTO_SYNC_DEFAULT_SECONDS = 60;
 
-// 自定义间隔的取值整理：非数字回落到 1 分钟，夹在 5 秒 ~ 24 小时之间
 function normalizeAutoSyncSeconds(value) {
     const num = Number(value);
     if (!Number.isFinite(num)) return SYNC_AUTO_SYNC_DEFAULT_SECONDS;
     return Math.min(Math.max(Math.round(num), SYNC_AUTO_SYNC_MIN_SECONDS), SYNC_AUTO_SYNC_MAX_SECONDS);
 }
 
-/* 自建同步配置规范化：容忍缺失/脏数据。
-   注意这里没有令牌：令牌由主进程存进系统密钥链，不随 config.json 落盘、也不进入渲染进程；
-   设备 id（deviceId）同样不在配置里——它由主进程生成并保存在配置目录的 sync_state.json，可在设置页「自建同步 → 设备 ID」里查看与复制。
-   lastSyncAt / lastSyncSummary 是上一次同步留下的记录，供设置页展示。 */
 function normalizeSyncServerConfig(raw) {
     const source = (raw && typeof raw === 'object') ? raw : {};
     const pick = (key) => (typeof source[key] === 'string' ? source[key].trim() : '');
     const lastSyncAt = Number(source.lastSyncAt);
     return {
-        // 总开关：默认关闭，填好地址后再由用户打开
+
         enabled: source.enabled === true,
         url: pick('url').replace(/\/+$/, ''),
-        // 上次登录用的账户名：只用于预填登录表单；密码与令牌都不会落盘
+
         account: pick('account'),
-        // 设备名：只用于在日志里分辨是哪台机器改的
+
         device: pick('device'),
-        // 自动同步：off / 5s / 1m / 5m / custom（off 只是不定时，启动时仍会同步一次）
+
         autoSync: SYNC_AUTO_SYNC_VALUES.includes(source.autoSync) ? source.autoSync : 'off',
         autoSyncSeconds: normalizeAutoSyncSeconds(source.autoSyncSeconds),
         lastSyncAt: Number.isFinite(lastSyncAt) && lastSyncAt > 0 ? lastSyncAt : 0,
@@ -1001,9 +933,6 @@ function normalizeSyncServerConfig(raw) {
     };
 }
 
-/* 旧版把 API Key 明文写在 config.json 的 ai.apiKey 里。主进程在启动时已经做过一次迁移，
-   这里再兜一次底：万一配置文件里仍有明文（例如数据目录刚从别处拷来），载入时立即交给主进程
-   存进系统密钥链，并把明文从内存里的配置抹掉，避免这一轮的任何保存又把它写回磁盘。 */
 function adoptLegacyApiKey(config) {
     const ai = config && typeof config === 'object' && config.ai && typeof config.ai === 'object' ? config.ai : null;
     const legacyKey = ai && typeof ai.apiKey === 'string' ? ai.apiKey.trim() : '';
@@ -1021,7 +950,6 @@ function adoptLegacyApiKey(config) {
     }
 }
 
-// 密钥保管状态（是否有密钥、怎么保管）由主进程给出，渲染进程拿不到明文
 function readAiKeyStatus() {
     const empty = { hasKey: false, encrypted: false, strong: false, migrated: false, path: '' };
     try {
@@ -1036,15 +964,13 @@ function loadData() {
     ensureStorageDirs();
     let config = { theme: 'system', themeStyle: 'default', accentColor: 'system', brandColor: 'brand', cornerRadius: 'default', uiScale: 1, spellcheck: false, uiMode: 'modern', tabsDisabled: false, sidebarCollapsed: false, trashRetentionDays: 0, autoUpdate: true, ghProxyEnabled: false, folders: [], aiActiveChat: '', fonts: {}, ai: {}, voice: {}, syncServer: {} };
 
-    // 1. 读取应用配置 config.json（自定义文件夹列表也存在这里）
-    try {
+try {
         if (fs.existsSync(CONFIG_FILE)) {
             const rawConfig = fs.readFileSync(CONFIG_FILE, 'utf8');
             if (rawConfig) {
                 const parsed = JSON.parse(rawConfig);
-                // 旧键迁移：「禁用标签页」这一项原先叫 lineHideTabs（Line 模式专属），
-                // 新键缺席时按旧键取值，免得改名后老用户的偏好丢回默认（标签页开启）
-                if (parsed && typeof parsed === 'object'
+
+if (parsed && typeof parsed === 'object'
                     && parsed.tabsDisabled === undefined && parsed.lineHideTabs !== undefined) {
                     parsed.tabsDisabled = parsed.lineHideTabs === true;
                 }
@@ -1057,21 +983,17 @@ function loadData() {
         console.error('读取 config.json 失败:', err);
     }
 
-    // API Key 不再随配置落盘：收编旧配置里的明文密钥，并同步取一次保管状态
-    adoptLegacyApiKey(config);
+adoptLegacyApiKey(config);
     const aiKeyStatus = readAiKeyStatus();
 
-    // 2. 旧版数据兼容：index.json 中的元数据只作为兜底来源，稍后并入各条目文件并归档
-    const legacyIndex = readLegacyIndex();
+const legacyIndex = readLegacyIndex();
     const legacyEntries = new Map(legacyIndex.notes.map(entry => [entry.id, entry]));
 
-    // 3. 扫描 items/ 以及旧版 notes/ 与 todos/ 目录
-    const scannedItems = readAllItemFiles();
+const scannedItems = readAllItemFiles();
     const scannedLegacyNotes = readNoteFiles();
     const scannedLegacyTodos = readTodoFiles();
 
-    // 合并并去重扫描到的文件记录（items/ 优先）
-    const allScannedFiles = new Map();
+const allScannedFiles = new Map();
     scannedItems.files.forEach(f => allScannedFiles.set(f.id, { ...f, legacySource: null }));
     scannedLegacyNotes.files.forEach(f => {
         if (!allScannedFiles.has(f.id)) {
@@ -1091,8 +1013,7 @@ function loadData() {
         const legacy = legacyEntries.get(file.id) || null;
         if (legacy) legacyEntries.delete(file.id);
 
-        // 判断条目类型：优先看元数据 type，其次看是否有 isDone 或来自 todos/
-        const metaType = file.meta && typeof file.meta.type === 'string' ? file.meta.type.trim().toLowerCase() : '';
+const metaType = file.meta && typeof file.meta.type === 'string' ? file.meta.type.trim().toLowerCase() : '';
         const isTodo = metaType === 'todo' || file.legacySource === 'todos' || (file.meta && file.meta.isDone !== undefined);
 
         if (isTodo) {
@@ -1102,16 +1023,13 @@ function loadData() {
         }
     });
 
-    // 旧索引里仍有记录、但文件已不在：说明该笔记早已被删除，不再保留任何痕迹
-    const vanishedLegacyNotes = legacyEntries.size;
+const vanishedLegacyNotes = legacyEntries.size;
 
-    // 4b. 共享笔记：别人共享过来的内容，与服务端的投影路径一一对应
-    const scannedShared = readSharedNoteFiles();
+const scannedShared = readSharedNoteFiles();
     const sharedNotes = scannedShared.files.map(file => buildSharedNoteFromFile(file));
     const allNotes = notes.concat(sharedNotes);
 
-    // 5. 文件夹列表 = config.json 中记录的 + 各笔记/待办实际用到的 + 旧索引里出现过的
-    const customFolders = [];
+const customFolders = [];
     const addFolder = (name) => {
         const trimmed = typeof name === 'string' ? name.trim() : '';
         if (!trimmed || trimmed === '默认' || customFolders.includes(trimmed)) return;
@@ -1121,23 +1039,21 @@ function loadData() {
     normalizeCustomFolders(legacyIndex.folders).forEach(addFolder);
     notes.forEach(note => addFolder(note.folder));
     todos.forEach(todo => addFolder(todo.folder));
-    // 共享笔记用到的文件夹同样列进侧边栏，它落在这个文件夹下才有地方可寻
+
     sharedNotes.forEach(note => addFolder(note.folder));
 
-    // 6. 文件夹落到实际存在的名字上（与旧行为一致：已不存在的文件夹回退到“默认”）
-    notes.forEach((note) => {
+notes.forEach((note) => {
         if (!note.folder || !customFolders.includes(note.folder)) note.folder = '默认';
     });
     todos.forEach((todo) => {
         if (!todo.folder || !customFolders.includes(todo.folder)) todo.folder = '默认';
     });
 
-    // 7. 与磁盘 items/{id}.md 逐字节比对并写回（若来自 notes/ 或 todos/，自动迁移到 items/）
-    const serialized = new Map();
+const serialized = new Map();
     let repairedNotes = 0;
     let rewriteFailed = 0;
     notes.forEach((note) => {
-        // 共享笔记不参与迁移到 items/
+
         if (note.shared) return;
         const text = serializeNoteFile(note);
         serialized.set(note.id, text);
@@ -1157,8 +1073,7 @@ function loadData() {
             }
         }
 
-        // 迁移清理：如果旧 notes/{id}.md 依然存在且 items/{id}.md 写入成功，清理旧目录下的文件
-        const legacyPath = path.join(NOTES_DIR, `${note.id}.md`);
+const legacyPath = path.join(NOTES_DIR, `${note.id}.md`);
         if (fs.existsSync(legacyPath) && fs.existsSync(targetPath)) {
             try {
                 fs.unlinkSync(legacyPath);
@@ -1166,13 +1081,11 @@ function loadData() {
         }
     });
 
-    // 8. 元数据都已落到各自的文件，旧索引即可归档（保留 .bak 以便万一回退）
-    const legacyArchived = (legacyIndex.found && !rewriteFailed)
+const legacyArchived = (legacyIndex.found && !rewriteFailed)
         ? archiveLegacyFile(LEGACY_INDEX_FILE, '索引迁移：元数据已写入各笔记文件')
         : false;
 
-    // 9. 待办同样与磁盘 items/{id}.md 比对并写回，并清理旧 todos/ 文件
-    const serializedTodos = new Map();
+const serializedTodos = new Map();
     let repairedTodos = 0;
     todos.forEach((todo) => {
         const text = serializeTodoFile(todo);
@@ -1192,8 +1105,7 @@ function loadData() {
             }
         }
 
-        // 迁移清理：如果旧 todos/{id}.md 存在且 items/{id}.md 写入成功，清理旧文件
-        const legacyPath = path.join(TODOS_DIR, `${todo.id}.md`);
+const legacyPath = path.join(TODOS_DIR, `${todo.id}.md`);
         if (fs.existsSync(legacyPath) && fs.existsSync(targetPath)) {
             try {
                 fs.unlinkSync(legacyPath);
@@ -1201,21 +1113,16 @@ function loadData() {
         }
     });
 
-    // 写入缓存与磁盘内容对齐，避免紧接着的首次保存重复写盘
-    resetWriteCache();
+resetWriteCache();
     notes.forEach(note => savedItemFiles.set(note.id, serialized.get(note.id)));
     todos.forEach(todo => savedItemFiles.set(todo.id, serializedTodos.get(todo.id)));
-    /* 共享笔记不参与上面的「与磁盘逐字节比对后写回」：那份文件的格式该由所有者那边的客户端
-       去修正，接收方照原样读出来就好（写回等于替所有者改笔记，还会平白推一条操作）。
-       缓存按规范化后的内容填：格式脏的数据也不会在接收方这边被改写。 */
+
     sharedNotes.forEach(note => savedItemFiles.set(note.id, serializeNoteFile(note)));
 
-    // 最近修改的排在前面，与列表默认排序一致
-    allNotes.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+allNotes.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     todos.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
-    // 10. 载入 AI 对话记录：一份对话一个文件，当前选中的对话记在 config.json 里
-    const aiChats = loadAiChats(config.aiActiveChat);
+const aiChats = loadAiChats(config.aiActiveChat);
 
     return {
         theme: config.theme || 'system',
@@ -1223,30 +1130,30 @@ function loadData() {
         accentColor: normalizeAccentColor(config.accentColor),
         brandColor: normalizeBrandColor(config.brandColor),
         cornerRadius: normalizeCornerRadius(config.cornerRadius),
-        // 界面尺寸（缩放比例）：非法值回落到 100%，与设置页滑块同一套取值
+
         uiScale: normalizeUiScale(config.uiScale),
         spellcheck: !!config.spellcheck,
-        // 界面布局：旧配置里没有该字段（或存着旧值）时即为现代布局
+
         uiMode: normalizeUiMode(config.uiMode),
-        // 现代布局下是否禁用标签页：只有显式写成 true 才算禁用，默认标签页开启
+
         tabsDisabled: config.tabsDisabled === true,
         sidebarCollapsed: !!config.sidebarCollapsed,
         trashRetentionDays: normalizeTrashRetentionDays(config.trashRetentionDays),
-        // 自动更新默认开启：只有显式写成 false 才视为关闭
+
         autoUpdate: config.autoUpdate !== false,
-        // gh-proxy 加速默认关闭：只有显式写成 true 才视为开启
+
         ghProxyEnabled: config.ghProxyEnabled === true,
-        // 开机自启默认关闭：只有显式写成 true 才视为开启
+
         autoLaunch: config.autoLaunch === true,
-        // 系统托盘默认显示：同样只有显式写成 false 才视为关闭
+
         trayEnabled: config.trayEnabled !== false,
-        // 桌面便利贴：总开关与默认纸张颜色
+
         stickyNotes: normalizeStickyConfig(config.stickyNotes),
         fonts: normalizeFonts(config.fonts),
         ai: normalizeAiConfig(config.ai),
-        // 随口记（语音转文本）：入口、识别语言与联网兜底开关
+
         voice: normalizeVoiceConfig(config.voice),
-        // 自建同步：服务器地址与自动同步设置随数据目录走，令牌在系统密钥链里（不在这份配置中）
+
         syncServer: normalizeSyncServerConfig(config.syncServer),
         aiKeyStatus,
         aiChats: { conversations: aiChats.conversations, activeId: aiChats.activeId },
@@ -1256,13 +1163,13 @@ function loadData() {
         dataCleanup: {
             repairedNotes,
             repairedTodos,
-            // 被忽略的非条目文件：条目目录 items/ 与旧版 notes/ 两处扫描的结果相加
+
             skippedFiles: scannedItems.skipped + scannedLegacyNotes.skipped,
-            // 旧版 todos/ 目录里的非待办文件；条目本身已统一到 items/，那里计在上一项
+
             skippedTodoFiles: scannedLegacyTodos.skipped,
-            // 共享目录里被忽略的文件（不是笔记的东西）
+
             skippedSharedFiles: scannedShared.skipped,
-            // 自定义文件夹列表需要写回 config.json 时标记
+
             foldersChanged: JSON.stringify(normalizeCustomFolders(config.folders)) !== JSON.stringify(customFolders),
             legacyIndex: {
                 found: legacyIndex.found,
@@ -1275,7 +1182,6 @@ function loadData() {
     };
 }
 
-// 保存配置到 config.json（自定义文件夹列表与当前选中的 AI 对话也随配置一起保存）
 function saveConfig() {
     ensureStorageDirs();
     try {
@@ -1285,39 +1191,35 @@ function saveConfig() {
             accentColor: normalizeAccentColor(State.accentColor),
             brandColor: normalizeBrandColor(State.brandColor),
             cornerRadius: normalizeCornerRadius(State.cornerRadius),
-            // 界面尺寸（缩放比例，默认 100%）：渲染进程启动时据它调 Chromium 缩放
+
             uiScale: normalizeUiScale(State.uiScale),
             spellcheck: State.spellcheck,
-            // 界面布局（默认现代）：只接受 classic / modern，脏数据回退为现代布局
-            // （normalizeUiMode 还认旧值 line / notab / minimal 与 standard，见 scripts/state.js）
-            uiMode: normalizeUiMode(State.uiMode),
-            // 现代布局下是否禁用标签页（经典布局下无效，但偏好照旧留着）
+
+uiMode: normalizeUiMode(State.uiMode),
+
             tabsDisabled: State.tabsDisabled === true,
             sidebarCollapsed: !!State.sidebarCollapsed,
             trashRetentionDays: normalizeTrashRetentionDays(State.trashRetentionDays),
-            // 自动更新（默认开启）：主进程读取这一项决定是否在启动后自动检查
+
             autoUpdate: State.autoUpdate !== false,
-            // gh-proxy 加速（默认关闭）：主进程读取这一项决定检查更新与下载安装包时是否先走代理
+
             ghProxyEnabled: State.ghProxyEnabled === true,
-            // 开机自启（默认关闭）：主进程读取这一项决定是否登记系统启动项
+
             autoLaunch: State.autoLaunch === true,
-            // 系统托盘（默认显示）：主进程读取这一项决定是否创建托盘图标
+
             trayEnabled: State.trayEnabled !== false,
-            /* 桌面便利贴（默认开启）：主进程读取这一项决定要不要把列在记录里的便利贴贴出来，
-               同时取其中的默认纸张颜色用于新建 */
+
             stickyNotes: normalizeStickyConfig(State.stickyNotes),
-            // 当前选中的 AI 对话：对话本体在 ai_chats/ 下，这里只记一个 id
+
             aiActiveChat: typeof State.aiActiveConversationId === 'string' ? State.aiActiveConversationId : '',
             folders: normalizeCustomFolders(State.folders),
             fonts: normalizeFonts(State.fonts),
             ai: normalizeAiConfig(State.ai),
-            // 随口记（语音转文本）：默认只走本机离线识别
+
             voice: normalizeVoiceConfig(State.voice)
         };
 
-        // 自建同步配置只在从磁盘载入过之后才写回（载入点见 app.js 与 data_location.js）：
-        // 漏一个字段只是这次的同步配置不落盘，直接写却会把用户填好的地址静默抹成默认值
-        if (State.syncServerLoaded) config.syncServer = normalizeSyncServerConfig(State.syncServer);
+if (State.syncServerLoaded) config.syncServer = normalizeSyncServerConfig(State.syncServer);
 
         const json = JSON.stringify(config, null, 2);
         if (json === savedConfigJSON) return;
@@ -1328,7 +1230,6 @@ function saveConfig() {
     }
 }
 
-// 保存单篇笔记：写回 items/{id}.md（元数据注释与正文一起写回）
 function saveNote(note) {
     if (!note || !note.id) return;
     ensureStorageDirs();
@@ -1336,7 +1237,7 @@ function saveNote(note) {
         const text = serializeNoteFile(note);
         if (savedItemFiles.get(note.id) === text) return;
         const file = noteFilePath(note);
-        // 共享笔记的目录以所有者为单位，第一次写入时按需建出来
+
         fs.mkdirSync(path.dirname(file), { recursive: true });
         writeFileAtomic(file, text);
         savedItemFiles.set(note.id, text);
@@ -1345,12 +1246,9 @@ function saveNote(note) {
     }
 }
 
-/* 删除笔记文件（元数据与正文同在一份文件，删掉即彻底移除），并同步丢弃写入缓存。
-   共享笔记的删除不推给服务端：它属于所有者，接收方只能「退出共享」（见 scripts/team_notes.js）；
-   服务端也会拒收接收方对投影路径的删除。 */
 function deleteNoteFile(noteId) {
     savedItemFiles.delete(noteId);
-    // 会话里若还留着这一条的密钥，随文件一起丢掉
+
     if (typeof forgetSecretKey === 'function') forgetSecretKey(noteId);
     const shared = parseSharedItemId(noteId);
     try {
@@ -1359,7 +1257,7 @@ function deleteNoteFile(noteId) {
             fs.unlinkSync(notePath);
             if (!shared) notifyRemoteDelete(notePath);
         }
-        // 清理旧目录下的遗留文件（如果有）
+
         const legacyNotePath = path.join(NOTES_DIR, `${noteId}.md`);
         if (fs.existsSync(legacyNotePath)) {
             fs.unlinkSync(legacyNotePath);
@@ -1368,11 +1266,10 @@ function deleteNoteFile(noteId) {
     } catch (err) {
         console.error(`删除笔记文件 ${noteId}.md 失败:`, err);
     }
-    // 笔记已彻底删除：贴在它上面的便利贴解除绑定（见 scripts/sticky_notes.js）
+
     if (typeof notifyStickyItemRemoved === 'function') notifyStickyItemRemoved(noteId);
 }
 
-// 保存单份待办：写回 data/items/{id}.md，格式与笔记一致（内容未变时跳过写入）
 function saveTodo(todo) {
     if (!todo || !todo.id) return;
     ensureStorageDirs();
@@ -1387,10 +1284,9 @@ function saveTodo(todo) {
     }
 }
 
-// 删除待办文件（元数据与正文同在一份文件，删掉即彻底移除），并同步丢弃写入缓存
 function deleteTodoFile(todoId) {
     savedItemFiles.delete(todoId);
-    // 会话里若还留着这一条的密钥，随文件一起丢掉
+
     if (typeof forgetSecretKey === 'function') forgetSecretKey(todoId);
     try {
         const todoPath = path.join(ITEMS_DIR, `${todoId}.md`);
@@ -1406,21 +1302,19 @@ function deleteTodoFile(todoId) {
     } catch (err) {
         console.error(`删除待办文件 ${todoId}.md 失败:`, err);
     }
-    // 待办已彻底删除：贴在它上面的便利贴解除绑定（见 scripts/sticky_notes.js）
+
     if (typeof notifyStickyItemRemoved === 'function') notifyStickyItemRemoved(todoId);
 }
 
-// 按条目类型分发读写：笔记与待办共用编辑器与标签页，保存/删除时按归属选目标目录
 function saveItem(item) {
     if (isTodoItem(item)) saveTodo(item);
     else saveNote(item);
-    /* 贴在桌面上的便利贴同步刷新（见 scripts/sticky_notes.js）：
-       本函数是主窗口侧所有条目改动的汇合点，因此只需在这里通知一次 */
+
     if (typeof notifyStickyItemSaved === 'function') notifyStickyItemSaved(item);
 }
 
 function deleteItemFile(itemId) {
-    // 会话里若还留着这一条的密钥，随文件一起丢掉
+
     if (typeof forgetSecretKey === 'function') forgetSecretKey(itemId);
     if (State.todos.some(todo => todo.id === itemId)) deleteTodoFile(itemId);
     else deleteNoteFile(itemId);

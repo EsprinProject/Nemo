@@ -1,19 +1,9 @@
-/* AI 多对话：对话记录的增删改查、标题推导，以及面板内的对话记录列表。
-   一份对话一个文件，保存在数据目录的 ai_chats/{id}.json 中（当前选中的对话记在 config.json），
-   随数据目录一起迁移与备份。 */
-
-// 自动标题的最大长度（超出后截断加省略号）
 const AI_CHAT_TITLE_MAX_LENGTH = 22;
-// 仅切换当前对话（只改 config.json 里的 activeId）时，攒一下再落盘
-const AI_CHAT_SAVE_DELAY = 600;
 
-// 对话数与单对话消息数上限定义在 storage.js（AI_CHAT_LIMIT / AI_CHAT_MESSAGE_LIMIT），
-// 落盘时的规范化与界面上的清理共用同一组常量。
+const AI_CHAT_SAVE_DELAY = 600;
 
 let aiChatsSaveTimer = null;
 let aiDrawerOpen = false;
-
-// ---------- 对话模型 ----------
 
 function findAiConversation(id) {
     return State.aiConversations.find(chat => chat.id === id) || null;
@@ -24,7 +14,6 @@ function createAiConversation() {
     return { id: generateAiChatId(), title: '', messages: [], createdAt: now, updatedAt: now };
 }
 
-// 与笔记 ID 同一套随机规则：10 位随机字符作为文件名
 function generateAiChatId() {
     let id = generateNoteId();
     while (findAiConversation(id) || fs.existsSync(path.join(AI_CHATS_DIR, `${id}.json`))) {
@@ -33,7 +22,6 @@ function generateAiChatId() {
     return id;
 }
 
-// 内存中至少保留一个对话，并保证 activeId 始终指向存在的对话
 function ensureAiConversations() {
     if (!Array.isArray(State.aiConversations)) State.aiConversations = [];
     if (!State.aiConversations.length) {
@@ -47,29 +35,24 @@ function ensureAiConversations() {
     return chat;
 }
 
-// 当前对话：所有发消息、渲染都基于它
 function activeAiConversation() {
     return ensureAiConversations();
 }
 
-// 当前对话的消息数组：直接用它的引用做增删，避免多处各存一份
 function activeAiMessages() {
     return activeAiConversation().messages;
 }
 
-// 按最后使用时间倒序，保证列表与“最近使用”一致
 function sortAiConversations() {
     State.aiConversations.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
 
-// 记录一次使用：刷新时间并把它挪到列表最前
 function touchAiConversation(chat) {
     if (!chat) return;
     chat.updatedAt = Date.now();
     sortAiConversations();
 }
 
-// 超出上限时按使用时间清理，当前对话始终保留
 function trimAiConversations() {
     if (State.aiConversations.length <= AI_CHAT_LIMIT) return;
 
@@ -81,7 +64,7 @@ function trimAiConversations() {
             .map(chat => chat.id)
     );
     if (State.aiActiveConversationId) keepIds.add(State.aiActiveConversationId);
-    // 被裁掉的对话连同文件与图片附件一起删除，磁盘上不留孤儿数据
+
     State.aiConversations
         .filter(chat => !keepIds.has(chat.id))
         .forEach((chat) => {
@@ -92,7 +75,6 @@ function trimAiConversations() {
     sortAiConversations();
 }
 
-// 对话标题：用户重命名过就用它，否则以第一条提问自动生成
 function aiChatDisplayTitle(chat) {
     if (chat.title) return chat.title;
     const firstQuestion = chat.messages.find(msg => msg.role === 'user' && msg.content);
@@ -333,8 +315,7 @@ function initAiChats() {
     const drawerCloseBtn = document.getElementById('btn-ai-drawer-close');
     if (drawerCloseBtn) drawerCloseBtn.onclick = closeAiDrawer;
 
-    // 关闭窗口前把攒着的改动落盘（切换对话后只改了 config.json 里的当前对话 id）
-    window.addEventListener('beforeunload', flushActiveAiChatSave);
+window.addEventListener('beforeunload', flushActiveAiChatSave);
 
     renderAiChatList();
 }

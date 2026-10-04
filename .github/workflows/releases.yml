@@ -81,19 +81,19 @@ jobs:
           echo "收集 git 提交历史..."
           LAST_TAG=$(git describe --tags --abbrev=0 "${{ github.sha }}^" 2>/dev/null || echo "")
           if [ -n "$LAST_TAG" ]; then
-            COMMITS=$(git log "$LAST_TAG..${{ github.sha }}" --pretty=format:"* %s (%h)" --no-merges)
+            # 过滤 merge 提交与纯发版/版本号变更类提交
+            COMMITS=$(git log "$LAST_TAG..${{ github.sha }}" --pretty=format:"* %s (%h)" --no-merges | grep -viE "^\*\s*(bump|release|chore\(release\)|chore: release)" || echo "")
           else
-            COMMITS=$(git log -n 30 --pretty=format:"* %s (%h)" --no-merges)
+            COMMITS=$(git log -n 15 --pretty=format:"* %s (%h)" --no-merges | grep -viE "^\*\s*(bump|release|chore\(release\)|chore: release)" || echo "")
           fi
 
           if [ -z "$COMMITS" ]; then
-            COMMITS="* 版本常规更新与问题修复"
+            COMMITS="* 无新增功能提交（纯维护或版本号变更）"
           fi
 
-          COMMITS="$COMMITS" VERSION="$VERSION" node -e '
+          COMMITS="$COMMITS" node -e '
             const fs = require("fs");
             const commits = process.env.COMMITS || "";
-            const version = process.env.VERSION || "";
 
             // 解析机密配置
             function parseConfig(raw) {
@@ -117,14 +117,17 @@ jobs:
             const model = parsed.MODEL || "";
 
             async function run() {
+              const fallbackContent = "常规维护与优化\n\n- 本次为内部工程维护，无可见的功能与界面变更";
+
               if (!key || !url || !model) {
-                console.log("未提供完整的 AI_RELEASE 机密配置（需包含 URL, KEY, MODEL），使用提交日志。");
-                fs.writeFileSync("GENERATED_RELEASE.md", "### 更新日志\n\n" + commits, "utf8");
+                console.log("未提供完整的 AI_RELEASE 机密配置（需包含 URL, KEY, MODEL），使用默认说明。");
+                fs.writeFileSync("GENERATED_RELEASE.md", fallbackContent, "utf8");
                 return;
               }
 
               console.log("正在调用 AI 生成发行版说明...");
-              const prompt = `你是一个软件工程助理。请根据以下 Git 提交日志，为版本 v${version} 构思发行版更新说明（Release Notes）。\n\n输出格式要求（严格遵守）：\n首行输出一句话更新总结（20字左右，客观精炼）\n空一行\n按无序列表输出具体的更新点（每项以 - 开头）\n\n示例格式：\n20字的更新总结\n\n- 更新1\n- 更新2\n- 更新3\n\n约束：\n1. 严禁使用 Emoji 表情。\n2. 严禁使用 markdown 代码块包裹标记（\`\`\`）。\n3. 仅直接输出 Markdown 正文。\n\n提交日志：\n${commits}`;
+              const promptTemplate = fs.readFileSync(".github/workflows/releases_prompt.md", "utf8");
+              const prompt = promptTemplate.replace("{{commits}}", commits);
 
               try {
                 let endpoint = url.replace(/\/+$/, "");
@@ -140,16 +143,17 @@ jobs:
                   },
                   body: JSON.stringify({
                     model: model,
-                    messages: [{ role: "user", content: prompt }]
+                    messages: [{ role: "user", content: prompt }],
+                    temperature: 0.2
                   })
                 });
 
                 const data = await res.json();
                 let text = data.choices?.[0]?.message?.content || "";
                 text = text.trim();
-                if (text.startsWith("\`\`\`markdown")) {
+                if (text.startsWith("```markdown")) {
                   text = text.replace(/^```markdown\s*/, "").replace(/\s*```$/, "");
-                } else if (text.startsWith("\`\`\`")) {
+                } else if (text.startsWith("```")) {
                   text = text.replace(/^```\s*/, "").replace(/\s*```$/, "");
                 }
 
@@ -161,7 +165,7 @@ jobs:
                 console.error("AI 生成失败:", err);
               }
 
-              fs.writeFileSync("GENERATED_RELEASE.md", "### 更新日志\n\n" + commits, "utf8");
+              fs.writeFileSync("GENERATED_RELEASE.md", fallbackContent, "utf8");
             }
 
             run();
@@ -191,5 +195,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "清理 $GITHUB_REPOSITORY 的 Actions 缓存……"
+          echo "清理 $GITHUB_REPOSITORY 的 Actions 缓存..."
           gh cache delete --all --repo "$GITHUB_REPOSITORY" || echo "没有可清理的缓存。"

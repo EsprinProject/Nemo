@@ -1,28 +1,16 @@
-// 随口记的系统语音识别桥（主进程）。
-//
-// 识别由 Windows 自带的桌面识别引擎完成（System.Speech.Recognition.SpeechRecognitionEngine +
-// DictationGrammar），音频只进本机引擎、不出本机，因此渲染进程既不碰麦克风，也不经过网络。
-// 引擎跑在一个 Windows PowerShell 子进程里（见 speech_windows.ps1），结果按行以 JSON 回传，
-// 这里再转成 IPC 事件交给渲染进程。
-//
-// 子进程生命周期与会话一一对应：渲染进程 start 时拉起，stop 或窗口销毁时结束；
-// 应用退出前也会收掉，避免留下一个仍然占着麦克风的进程。
 const { ipcMain } = require('electron');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-// 只认这几个取值，避免把渲染进程传来的字符串拼进脚本
 const CULTURE_PATTERN = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
-// Windows PowerShell 5.1 的固定位置：WinRT / System.Speech 在 pwsh（.NET Core）里不可用
+
 const POWERSHELL_EXE = path.join(process.env.SystemRoot || 'C:\\Windows',
   'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 const SCRIPT_FILE = path.join(__dirname, 'speech_windows.ps1');
 
-// 脚本内容只读一次；执行时以 UTF-16LE base64 经 -EncodedCommand 交给 PowerShell：
-// 不落临时文件，也不受命令行引号与控制台代码页影响（见 speech_windows.ps1 头部说明）
 let scriptSource = '';
-// 当前会话：{ child, sender, lastError, settled }
+
 let session = null;
 
 function isSupportedPlatform() {
@@ -39,7 +27,6 @@ function buildEncodedCommand(mode, culture) {
   return Buffer.from(injected + readScriptSource(), 'utf16le').toString('base64');
 }
 
-// 起一个 PowerShell 子进程：-EncodedCommand 承载整段脚本，额外参数都靠脚本内注入的变量传递
 function spawnHelper(mode, culture) {
   const child = spawn(POWERSHELL_EXE, [
     '-NoProfile',
@@ -60,7 +47,7 @@ function spawnHelper(mode, culture) {
       if (text) lines.push(text);
     });
   });
-  // PowerShell 的报错文本只作诊断留在主进程日志里，不往界面上抛
+
   child.stderr.setEncoding('utf8');
   child.stderr.on('data', (chunk) => {
     const text = String(chunk).trim();
@@ -70,7 +57,6 @@ function spawnHelper(mode, culture) {
   return { child, lines };
 }
 
-// JSON 行解析：解析失败的行走 console，不让它影响会话
 function parseLine(line) {
   try {
     const value = JSON.parse(line);
@@ -81,13 +67,11 @@ function parseLine(line) {
   }
 }
 
-// 单元素数组会被 ConvertTo-Json 折成对象，这里统一成数组
 function toArray(value) {
   if (Array.isArray(value)) return value;
   return value ? [value] : [];
 }
 
-// 探测本机可用的识别引擎（设置页的状态行用）
 function probeStatus() {
   return new Promise((resolve) => {
     if (!isSupportedPlatform()) {
@@ -134,7 +118,6 @@ function sendToRenderer(payload) {
   session.sender.send('speech:event', payload);
 }
 
-// 会话结束后的统一收尾：通知界面、清掉引用（silent 用于渲染进程自己发起的 stop）
 function teardownSession(options = {}) {
   const current = session;
   session = null;
@@ -171,7 +154,7 @@ function startSession(event, culture) {
     };
 
     sender.once('destroyed', () => {
-      // 窗口没了就没有接收方，会话不必继续占着麦克风
+
       if (session && session.sender === sender) teardownSession({ silent: true });
     });
 
@@ -181,8 +164,7 @@ function startSession(event, culture) {
       teardownSession({ silent: true });
     });
 
-    // 结果行是流式的：子进程按行写入，这里定时取走并转成界面事件
-    const pump = setInterval(() => {
+const pump = setInterval(() => {
       if (!session || session.child !== helper.child) {
         clearInterval(pump);
         return;
@@ -220,7 +202,7 @@ function startSession(event, culture) {
 
 function stopSession() {
   if (!session) return { ok: true, stopped: false };
-  // silent：停止是渲染进程主动发起的，不需要再回一条「会话已结束」
+
   teardownSession({ silent: true });
   return { ok: true, stopped: true };
 }
@@ -234,7 +216,6 @@ function registerSpeechIpc() {
   ipcMain.handle('speech:stop', () => stopSession());
 }
 
-// 退出前收掉子进程：否则系统里会留下一个仍占着麦克风的 PowerShell
 function disposeSpeechWindows() {
   if (session) teardownSession({ silent: true });
 }

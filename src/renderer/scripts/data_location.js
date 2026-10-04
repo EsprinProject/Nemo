@@ -1,7 +1,3 @@
-/* 数据存放位置：展示当前目录，并支持更改 / 恢复默认 / 在文件管理器中打开 */
-
-// 数据位置信息（由主进程提供：当前目录、默认目录、是否自定义位置、是否开发运行、
-// 是否便携版运行、位置记录文件的实际路径）
 let dataDirInfo = {
     dataDir: DATA_DIR,
     defaultDir: '',
@@ -11,10 +7,8 @@ let dataDirInfo = {
     locationFile: ''
 };
 
-// 开发运行（bun start）下数据固定在项目内 data/，整行置灰不可更改
 const DATA_DIR_LOCKED_HINT = '当前为开发运行（bun start），数据固定存放在项目内的 data/ 目录，无法更改数据存放位置。';
 
-// 锁定时整行淡化并禁用全部按钮；解锁时交由 updateDataDirUI 按实际状态恢复
 function applyDataDirLock(locked) {
     const row = document.getElementById('setting-data-row');
     if (row) row.classList.toggle('is-locked', locked);
@@ -34,9 +28,8 @@ function updateDataDirUI() {
     const resetBtn = document.getElementById('btn-data-reset');
     const status = document.getElementById('data-dir-status');
     const locked = !!dataDirInfo.isDevRun;
-    // 便携版：数据默认在便携版所在目录下的 data/，位置记录也写在该目录下。
-    // 与安装版一样可以更换位置，所以这里不置灰，只在下方说明当前数据与记录的落点
-    const portable = !locked && !!dataDirInfo.isPortableRun;
+
+const portable = !locked && !!dataDirInfo.isPortableRun;
 
     if (text) text.textContent = dataDirInfo.dataDir || DATA_DIR;
     if (tag) {
@@ -89,7 +82,7 @@ async function refreshDataDirInfo() {
                 isPortableRun: !!info.isPortableRun,
                 locationFile: typeof info.locationFile === 'string' ? info.locationFile : ''
             };
-            // 兜底：渲染进程使用的目录始终与主进程保持一致
+
             if (path.resolve(info.dataDir) !== path.resolve(DATA_DIR)) {
                 setDataPaths(info.dataDir);
             }
@@ -101,39 +94,37 @@ async function refreshDataDirInfo() {
     updateDataDirUI();
 }
 
-// 切换到主进程确认后的新位置：更新路径 → 重新载入数据 → 刷新界面（无需重启）
 function adoptDataDir(dir, options = {}) {
     const prefs = {
         theme: State.theme,
         themeStyle: State.themeStyle,
         accentColor: State.accentColor,
         cornerRadius: State.cornerRadius,
-        // 界面尺寸（缩放）也属于外观偏好：新位置没有配置时沿用当前的缩放比例
+
         uiScale: State.uiScale,
         spellcheck: State.spellcheck,
-        // 界面布局同样属于偏好：新位置没有配置时沿用当前位置的布局
+
         uiMode: State.uiMode,
-        // 「禁用标签页」也是现代布局下的偏好，同样跟着走
+
         tabsDisabled: State.tabsDisabled,
         sidebarCollapsed: State.sidebarCollapsed,
         trashRetentionDays: State.trashRetentionDays,
         autoUpdate: State.autoUpdate,
-        // gh-proxy 加速开关也属于偏好：新位置没有配置时沿用当前位置的选择
+
         ghProxyEnabled: State.ghProxyEnabled === true,
         autoLaunch: State.autoLaunch === true,
         trayEnabled: State.trayEnabled !== false,
-        // 应用名文字颜色（brand / mono / accent）同样属于偏好
+
         brandColor: State.brandColor,
         fonts: { ...State.fonts },
-        // 随口记的入口、识别语言与联网兜底同属偏好（不是数据目录的内容）
+
         voice: { ...State.voice }
     };
 
     setDataPaths(dir);
     ensureStorageDirs();
 
-    // 新位置自带配置（尤其是迁移过来的数据）时采用其中的偏好，否则沿用当前偏好并写入
-    const hasConfig = fs.existsSync(CONFIG_FILE);
+const hasConfig = fs.existsSync(CONFIG_FILE);
     const saved = loadData();
 
     if (hasConfig) {
@@ -153,15 +144,12 @@ function adoptDataDir(dir, options = {}) {
         State.autoLaunch = saved.autoLaunch === true;
         State.trayEnabled = saved.trayEnabled !== false;
         State.fonts = saved.fonts;
-        // AI 接口配置随数据目录走：新位置自带的配置（尤其是迁移过来的）优先
+
         State.ai = saved.ai;
         State.aiScope = State.ai.scope;
-        // 随口记：识别语言与联网兜底同样以新位置的配置为准
+
         State.voice = saved.voice;
-        /* 自建同步的服务器地址这类连接信息更像「这台机器连哪个同步服务」的偏好，而不是数据目录的内容：
-           新位置的配置里带了地址就采用（迁移过来的数据），没带就沿用当前这份。令牌本就在系统密钥链里、
-           与数据目录无关，地址跟着保持一致，才不会出现「切一次目录就少了一半配置」。
-           上次同步的时刻与结果为同一份数据服务，因此跟着新位置走 */
+
         const loadedSync = normalizeSyncServerConfig(saved.syncServer);
         State.syncServer = loadedSync.url
             ? loadedSync
@@ -188,32 +176,25 @@ function adoptDataDir(dir, options = {}) {
         saveConfig();
     }
 
-    // 对话记录与笔记一样属于新位置的内容：新位置没有记录就开一份空白对话，
-    // 不把上一个位置的对话带过去（避免迁移选择为“不迁移”时内容被悄悄带过去）。
-    adoptAiChats(saved.aiChats);
+adoptAiChats(saved.aiChats);
 
-    // 换目录后条目对象全是新的，会话里的解密密钥随之作废（新位置的文件还没有解开过）
-    if (typeof clearSecretSession === 'function') clearSecretSession();
+if (typeof clearSecretSession === 'function') clearSecretSession();
 
     State.notes = saved.notes;
     State.todos = Array.isArray(saved.todos) ? saved.todos : [];
-    // 换目录后条目对象全是新的，重新标一遍类型
+
     markItemKinds(State.notes, State.todos);
     State.folders = saved.folders;
 
-    // 新位置同样执行一次数据清理（与启动流程一致）：
-    // 笔记、待办与对话文件的格式修正已在 loadData 内完成，文件夹列表有变化时写回配置
-    const cleanup = saved.dataCleanup;
+const cleanup = saved.dataCleanup;
     if (cleanup && cleanup.foldersChanged) saveConfig();
 
-    // 丢弃在新位置不存在的标签页，避免指向幽灵条目
-    State.openNoteIds = State.openNoteIds.filter(id => id === 'settings' || !!getItemById(id));
+State.openNoteIds = State.openNoteIds.filter(id => id === 'settings' || !!getItemById(id));
     if (!State.openNoteIds.includes(State.activeNoteId)) {
         State.activeNoteId = State.openNoteIds[State.openNoteIds.length - 1] || null;
     }
 
-    // 过滤条件在新位置可能已失效，回退到“全部笔记”
-    if (State.currentFilter.startsWith('folder:')) {
+if (State.currentFilter.startsWith('folder:')) {
         const folder = State.currentFilter.replace('folder:', '');
         if (!State.folders.includes(folder)) State.currentFilter = 'all';
     } else if (State.currentFilter.startsWith('tag:')) {
@@ -230,7 +211,7 @@ function adoptDataDir(dir, options = {}) {
     applySpellcheck();
     applyFonts();
     applySidebarCollapsed();
-    // 界面布局也随新位置的配置走：新位置若选的是现代布局，标题栏要跟着收起（标签页改到工作区顶部）
+
     applyUiMode();
     syncFontSelects();
     syncAccentControls();
@@ -242,14 +223,14 @@ function adoptDataDir(dir, options = {}) {
     syncAiSettingsUI();
     syncSyncServerSettingsUI();
     syncUiModeUI();
-    // 自动更新开关随配置走：新位置若关掉了自动更新，主进程的定时检查也要跟着停
+
     syncUpdateSettingsUI();
     ipcRenderer.invoke('update:set-auto', { enabled: State.autoUpdate !== false }).catch((err) => {
         console.error('同步自动更新开关失败:', err);
     });
-    // 托盘开关同样随配置走：新位置若关掉了托盘图标，图标要跟着消失
+
     syncTraySetting();
-    // 开机自启也随配置走：登记在系统里的启动项要与新位置的设置保持一致
+
     syncAutoLaunchSetting();
     renderAiMessages();
     renderAiChatList();
@@ -257,8 +238,7 @@ function adoptDataDir(dir, options = {}) {
     dataDirInfo = { ...dataDirInfo, dataDir: DATA_DIR };
     updateDataDirUI();
 
-    // 新位置可能自带过期的废纸篓条目，按当前保留策略清理一次
-    const purged = purgeExpiredTrashItems();
+const purged = purgeExpiredTrashItems();
 
     renderApp();
     showToast(options.message || '数据存放位置已切换');
@@ -282,7 +262,6 @@ async function handleDataDirResult(result, successMessage) {
     });
 }
 
-// 通过目录选择框更改数据存放位置（可选迁移现有数据）
 async function changeDataDir() {
     if (dataDirInfo.isDevRun) {
         showToast(DATA_DIR_LOCKED_HINT);
@@ -290,8 +269,8 @@ async function changeDataDir() {
     }
     setDataDirButtonsDisabled(true);
     try {
-        flushPendingSave(); // 先落盘，保证迁移/切换的是最新内容
-        flushActiveAiChatSave(); // 当前对话的切换也要先写进旧位置的 config.json
+        flushPendingSave();
+        flushActiveAiChatSave();
         const result = await ipcRenderer.invoke('data:choose-dir');
         await handleDataDirResult(result, '数据存放位置已切换');
         await refreshDataDirInfo();
@@ -303,7 +282,6 @@ async function changeDataDir() {
     }
 }
 
-// 恢复为默认数据存放位置
 async function resetDataDir() {
     if (dataDirInfo.isDevRun) {
         showToast(DATA_DIR_LOCKED_HINT);
@@ -314,9 +292,8 @@ async function resetDataDir() {
         flushPendingSave();
         flushActiveAiChatSave();
         const result = await ipcRenderer.invoke('data:reset-dir');
-        // 默认位置不可用而改选了其他位置时主进程返回的是自定义位置（isCustom 不为 false），
-        // 这种情况不能说成「已恢复默认」
-        const message = result && result.isCustom === false ? '已恢复默认数据存放位置' : '数据存放位置已切换';
+
+const message = result && result.isCustom === false ? '已恢复默认数据存放位置' : '数据存放位置已切换';
         await handleDataDirResult(result, message);
         await refreshDataDirInfo();
     } catch (err) {
@@ -327,7 +304,6 @@ async function resetDataDir() {
     }
 }
 
-// 在系统文件管理器中打开当前数据目录
 async function openDataDir() {
     try {
         const error = await ipcRenderer.invoke('data:open-dir');

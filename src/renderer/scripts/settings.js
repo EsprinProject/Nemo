@@ -1,11 +1,3 @@
-/* 设置视图的分类导航：侧边栏条目与内容面板按 id 一一对应 */
-
-// 设置分类：侧边栏条目与内容面板（data-settings-panel）按 id 一一对应。
-// 只按「用户想改什么」分五大类，面板内部再用 .settings-section 细分，避免左侧目录过长：
-//   · 字体、界面布局原本各自独立，现都收进「外观」（它们改的都是观感）
-//   · 更新与版本并进「系统」（它属于系统级行为，且便携版整块摘掉更简单）
-// 便携版没有更新功能：分类本身保留，由 scripts/update.js 把面板里的更新分区摘掉。
-// desc 是切到这个分类时写在设置页顶端的一句话，说明这一类管什么
 const SETTINGS_CATEGORIES = [
     { id: 'editor', label: '编辑器', icon: 'edit_note', desc: '拼写检查、随口记（语音转文本）与废纸篓的清理策略' },
     { id: 'appearance', label: '外观', icon: 'palette', desc: '界面布局、缩放、主题与字体' },
@@ -15,11 +7,10 @@ const SETTINGS_CATEGORIES = [
     { id: 'system', label: '系统', icon: 'dock_to_bottom', desc: '开机自启、托盘、桌面便利贴与更新版本' }
 ];
 
-// 记录当前分类，退出设置再进入时仍停留在原来的一类
 let activeSettingsCategory = SETTINGS_CATEGORIES[0].id;
 
 function switchSettingsCategory(id) {
-    // 记错了（例如配置文件里留着一个已不存在的分类 id）就退到第一个分类
+
     const category = SETTINGS_CATEGORIES.find(c => c.id === id) || SETTINGS_CATEGORIES[0];
     activeSettingsCategory = category.id;
 
@@ -34,18 +25,15 @@ function switchSettingsCategory(id) {
         panel.classList.toggle('hidden', panel.dataset.settingsPanel !== category.id);
     });
 
-    // 顶端标题换成当前分类：不必回看左侧目录，也知道现在在改哪一组
-    const headerText = document.getElementById('settings-header-text');
+const headerText = document.getElementById('settings-header-text');
     if (headerText) headerText.textContent = category.label;
     const headerDesc = document.getElementById('settings-header-desc');
     if (headerDesc) headerDesc.textContent = category.desc;
 
-    // 新面板通常比上一个短，回到顶部避免留下大片空白
-    const content = document.querySelector('#settings-view .settings-content');
+const content = document.querySelector('#settings-view .settings-content');
     if (content) content.scrollTop = 0;
 
-    // 「系统」分类里的更新区依赖主进程状态（可能已在后台检查/下载过）：每次切进来都刷一遍
-    if (category.id === 'system' && typeof refreshUpdateInfo === 'function') refreshUpdateInfo();
+if (category.id === 'system' && typeof refreshUpdateInfo === 'function') refreshUpdateInfo();
 }
 
 function initSettingsNav() {
@@ -58,9 +46,8 @@ function initSettingsNav() {
         item.type = 'button';
         item.className = 'nav-item settings-nav-item';
         item.dataset.settingsTarget = category.id;
-        // 分类名同时写进 title / aria-label：窗口过窄时分类栏收成图标条
-        //（见 styles/settings.css 的自适应一段），那时条目上只剩图标，名字靠它给出
-        item.title = category.label;
+
+item.title = category.label;
         item.setAttribute('aria-label', category.label);
         item.innerHTML = `
             <span class="nav-item-left">

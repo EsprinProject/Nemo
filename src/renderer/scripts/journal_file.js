@@ -1,14 +1,3 @@
-/* 文件日志（设置 → 数据与存储 → 文件日志）：把服务端那份 journal.log 用起来。
-
-   同步的全部数据都在服务端的一份 append-only 日志里（一行一条 put / del 操作）。
-   这里给出两条去路，读取与写盘都在主进程完成（见 src/main/sync_server.js）：
-
-     * 导入文件日志：把日志重放到本地数据目录，等价于「以这份日志为准还原数据」
-     * 文件日志转为文件夹：把日志的最终状态摊成一个目录树，不动本地数据目录
-
-   两者都不改动同步进度（已应用到第几号），也不往待推送队列里塞东西：
-   它们处理的是「一份本地文件」，而不是一次与服务端的同步。 */
-
 let journalBusy = false;
 
 function setJournalStatus(text, tone) {
@@ -33,7 +22,6 @@ function formatJournalSize(bytes) {
     return `${(size / 1024 / 1024).toFixed(2)} MB`;
 }
 
-// 概览 → 一句话：确认框与状态行共用
 function describeJournal(info) {
     const parts = [
         `${info.ops} 条操作（写入 ${info.puts}、删除 ${info.dels}）`,
@@ -58,7 +46,6 @@ async function pickJournalFile() {
     }
 }
 
-// 读取日志并回报概览；读不出来时顺手把原因写到状态行
 async function inspectJournalFile(filePath) {
     let info = null;
     try {
@@ -75,8 +62,6 @@ async function inspectJournalFile(filePath) {
     }
     return info;
 }
-
-/* ---------------- 导入 ---------------- */
 
 async function importJournalFile() {
     if (journalBusy) return;
@@ -104,8 +89,7 @@ async function importJournalFile() {
             return;
         }
 
-        // 编辑器与对话里还没落盘的输入先写回磁盘：导入之后不要再被自动保存覆盖回去
-        flushPendingSave();
+flushPendingSave();
         flushActiveAiChatSave();
 
         setJournalStatus('正在重放日志…');
@@ -115,8 +99,7 @@ async function importJournalFile() {
             return;
         }
 
-        // 本地文件被改过（或删过）了就重新载入一次，界面与磁盘保持一致
-        if (result.written || result.deleted) adoptDataDir(DATA_DIR, { message: result.summary });
+if (result.written || result.deleted) adoptDataDir(DATA_DIR, { message: result.summary });
         const failures = result.errors && result.errors.length
             ? `；有失败项，例如 ${result.errors[0]}`
             : '';
@@ -129,8 +112,6 @@ async function importJournalFile() {
         setJournalBusy(false);
     }
 }
-
-/* ---------------- 转文件夹 ---------------- */
 
 async function exportJournalFolder() {
     if (journalBusy) return;
@@ -189,8 +170,6 @@ async function exportJournalFolder() {
         setJournalBusy(false);
     }
 }
-
-/* ---------------- 初始化 ---------------- */
 
 function initJournalFileSettings() {
     const importBtn = document.getElementById('btn-journal-import');

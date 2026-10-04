@@ -1,26 +1,10 @@
-/* 秘密本：单篇文档的「隐藏」与「密码」。
-
-   隐藏（isHidden）：条目仍是一份普通笔记文件，只是不再进入任何列表、搜索、统计、
-   AI 提问范围与小本本，只能在「设置 → 秘密本」里找到并打开。
-
-   密码（locked）：正文以 AES-256-GCM 加密后落盘。落盘那一步由 storage.js 的
-   serializeItemFile 调 serializeSecretBody 现做密文，因此任何保存路径都写不出明文；
-   标题、文件夹、标签与时间等元数据保持明文，用于在列表与秘密本里定位条目。
-   口令既不落盘也不留在内存：只保留会话内的派生密钥（见 secretUnlocked），
-   应用退出即全部失效，忘记口令的文档无法恢复。
-
-   密钥派生用 PBKDF2-SHA256（轮数与盐都记在信封里），密文尾部接 GCM 认证标签：
-   口令错误与文件被改动都会在解密时失败，不需要另存一份校验值。
-   信封是纯文本 JSON，与网页版保持一致，同一份文档在两端都能解开。 */
-
 const nodeCrypto = require('node:crypto');
 
-// 密文信封：首尾各一行标记，中间一行 JSON（便于人工辨认，也便于整体替换）
 const SECRET_ENVELOPE_HEAD = '-----ESPRIN SECRET-----';
 const SECRET_ENVELOPE_TAIL = '-----END ESPRIN SECRET-----';
 const SECRET_KDF = 'PBKDF2-SHA256';
 const SECRET_CIPHER = 'AES-256-GCM';
-// 口令派生轮数：解密时以信封里记录的值为准，日后调高不影响旧文档
+
 const SECRET_ITERATIONS = 250000;
 const SECRET_KEY_BYTES = 32;
 const SECRET_SALT_BYTES = 16;
@@ -28,18 +12,12 @@ const SECRET_IV_BYTES = 12;
 const SECRET_TAG_BYTES = 16;
 const SECRET_PASSWORD_MIN = 4;
 
-// 已解开的条目：itemId -> { key, iterations }。密钥只活在这一轮会话里，
-// 条目被删除、数据目录被切换或应用退出时一并清掉
 const secretUnlocked = new Map();
-
-/* ---------------- 信封与加解密 ---------------- */
 
 function isSecretEnvelope(text) {
     return typeof text === 'string' && text.startsWith(SECRET_ENVELOPE_HEAD);
 }
 
-// 解析信封：返回 { iterations, salt, iv, ct }（salt / iv / ct 为 Buffer），
-// 格式不认识时返回 null。字段缺失或非法一律按无法识别处理，避免拿脏数据去解密
 function parseSecretEnvelope(text) {
     if (!isSecretEnvelope(text)) return null;
     const body = text.slice(SECRET_ENVELOPE_HEAD.length, text.lastIndexOf(SECRET_ENVELOPE_TAIL)).trim();
@@ -53,7 +31,7 @@ function parseSecretEnvelope(text) {
         const salt = Buffer.from(String(payload.salt || ''), 'base64');
         const iv = Buffer.from(String(payload.iv || ''), 'base64');
         const ct = Buffer.from(String(payload.ct || ''), 'base64');
-        // 空正文的密文也正好是一个认证标签的长度，因此这里只要求不小于标签长度
+
         if (salt.length < 8 || iv.length !== SECRET_IV_BYTES || ct.length < SECRET_TAG_BYTES) return null;
         return { iterations: Math.round(iterations), salt, iv, ct };
     } catch (err) {
@@ -65,8 +43,6 @@ function deriveSecretKey(password, salt, iterations) {
     return nodeCrypto.pbkdf2Sync(String(password), salt, iterations, SECRET_KEY_BYTES, 'sha256');
 }
 
-// 加密：认证标签接在密文尾部后整体 base64，与网页版 WebCrypto 的 AES-GCM 输出同构。
-// iterations 记的是派生这把密钥时实际用的轮数（会话重加密时沿用信封里的值）
 function sealSecretContent(key, iv, plaintext, salt, iterations = SECRET_ITERATIONS) {
     const cipher = nodeCrypto.createCipheriv(SECRET_CIPHER, key, iv);
     const data = Buffer.concat([cipher.update(String(plaintext == null ? '' : plaintext), 'utf8'), cipher.final()]);
@@ -82,7 +58,6 @@ function sealSecretContent(key, iv, plaintext, salt, iterations = SECRET_ITERATI
     return `${SECRET_ENVELOPE_HEAD}\n${JSON.stringify(payload)}\n${SECRET_ENVELOPE_TAIL}`;
 }
 
-// 用口令加密一段正文：返回信封文本与派生出的密钥、盐（盐随信封一起保存）
 function encryptSecretContent(password, plaintext) {
     const salt = nodeCrypto.randomBytes(SECRET_SALT_BYTES);
     const iv = nodeCrypto.randomBytes(SECRET_IV_BYTES);
@@ -90,7 +65,6 @@ function encryptSecretContent(password, plaintext) {
     return { envelope: sealSecretContent(key, iv, plaintext, salt), key, salt };
 }
 
-// 用口令解开信封：口令不对或密文被改动都返回 { ok: false }
 function openSecretEnvelope(password, envelopeText) {
     const parsed = parseSecretEnvelope(envelopeText);
     if (!parsed) return { ok: false, error: '密文格式无法识别' };
@@ -108,9 +82,6 @@ function openSecretEnvelope(password, envelopeText) {
     }
 }
 
-/* 落盘时使用的正文：条目带密码且本轮已解开时，按当前正文重新加密一份（盐沿用会话里的那份，
-   每次换一个随机 IV）；未解开时 content 本身就是上次落下的密文，原样写回。
-   加密条目永远走这里取正文，明文因此不会出现在磁盘上。 */
 function serializeSecretBody(item) {
     const content = String((item && item.content) || '');
     if (!item || item.locked !== true) return content;
@@ -119,9 +90,6 @@ function serializeSecretBody(item) {
     return sealSecretContent(session.key, nodeCrypto.randomBytes(SECRET_IV_BYTES), content, session.salt, session.iterations);
 }
 
-/* ---------------- 状态判定 ---------------- */
-
-// 已设置密码但本轮还没解开：正文在内存里是密文，只读且不可导出
 function isSecretLocked(item) {
     return !!(item && item.locked === true && item.unlocked !== true);
 }
@@ -130,12 +98,10 @@ function isSecretHidden(item) {
     return !!(item && item.isHidden === true);
 }
 
-// 秘密本管理的条目：隐藏或加密，两者可以同时成立
 function isSecretItem(item) {
     return !!(item && (item.locked === true || item.isHidden === true));
 }
 
-// 列表卡片、AI 提问范围与小本本只认「内容可读」的条目
 function isSecretRevealed(item) {
     return !isSecretLocked(item);
 }
@@ -147,8 +113,6 @@ function secretStateLabel(item) {
     return parts.join(' · ');
 }
 
-/* ---------------- 会话密钥 ---------------- */
-
 function clearSecretSession() {
     secretUnlocked.clear();
 }
@@ -156,8 +120,6 @@ function clearSecretSession() {
 function forgetSecretKey(itemId) {
     secretUnlocked.delete(itemId);
 }
-
-/* ---------------- 操作 ---------------- */
 
 async function askNewSecretPassword() {
     const password = await showPasswordPrompt('设置密码后正文将加密保存', {
@@ -190,11 +152,10 @@ async function askNewSecretPassword() {
     return password;
 }
 
-// 隐藏 / 取消隐藏：条目仍留在数据目录里，只是不再进入各处的列表
 function toggleItemHidden(itemId) {
     const item = getItemById(itemId);
     if (!item) return;
-    // 共享笔记的元数据写在所有者那份文件里：接收方隐藏它等于替对方隐藏
+
     if (typeof isSharedItem === 'function' && isSharedItem(item)) {
         showToast('共享笔记不能隐藏：状态会一并写到所有者的那份笔记上');
         return;
@@ -208,14 +169,13 @@ function toggleItemHidden(itemId) {
 async function setItemPassword(itemId) {
     const item = getItemById(itemId);
     if (!item || item.locked === true) return;
-    // 共享笔记的正文要与所有者保持一致，不能只在本地加密（密文会被推给对方）
+
     if (typeof isSharedItem === 'function' && isSharedItem(item)) {
         showToast('共享笔记不能设置密码：正文需与所有者保持一致');
         return;
     }
 
-    // 正在编辑的条目可能还有没落盘的输入：先写进内存，免得把旧正文加密进去
-    if (State.activeNoteId === itemId) flushPendingSave();
+if (State.activeNoteId === itemId) flushPendingSave();
 
     const password = await askNewSecretPassword();
     if (password === null) return;
@@ -223,9 +183,7 @@ async function setItemPassword(itemId) {
     const sealed = encryptSecretContent(password, item.content || '');
     const plaintext = item.content || '';
 
-    // 先按「已加密且未解锁」落盘一份密文，再把内存切回明文与已解锁状态：
-    // 保存走的序列化函数只看 locked 与会话密钥，因此磁盘上留下的永远是密文
-    item.locked = true;
+item.locked = true;
     item.unlocked = false;
     item.content = sealed.envelope;
     saveItem(item);
@@ -266,7 +224,6 @@ async function unlockItem(itemId) {
     return true;
 }
 
-// 重新上锁：按当前正文再加密一份落盘，内存里的明文与密钥一并丢弃
 function lockItemNow(itemId) {
     const item = getItemById(itemId);
     if (!item || item.locked !== true) return;
@@ -296,7 +253,7 @@ async function removeItemPassword(itemId) {
 
     let plaintext = '';
     if (item.unlocked === true) {
-        // 本轮已解锁：会话密钥已经证明过口令，不再问第二遍
+
         plaintext = item.content || '';
     } else {
         const password = await showPasswordPrompt(`解除《${itemDisplayTitle(item)}》的密码`, {
@@ -326,14 +283,11 @@ async function removeItemPassword(itemId) {
     showToast('已解除密码：正文恢复为明文保存');
 }
 
-// 需要正文明文的动作（导出 Markdown 等）先走这里：未解锁时先弹密码框
 async function ensureItemRevealed(itemId) {
     const item = getItemById(itemId);
     if (!item || !isSecretLocked(item)) return !!item;
     return unlockItem(itemId);
 }
-
-/* ---------------- 设置页：秘密本 ---------------- */
 
 function secretActionButton(label, title, variant, onClick) {
     const btn = document.createElement('button');

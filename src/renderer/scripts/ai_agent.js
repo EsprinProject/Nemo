@@ -1,17 +1,9 @@
-/* AI Agent 模式：让模型调用工具直接读写笔记（正文、标题、文件夹、标签、置顶、废纸篓）。
-   所有写操作都在渲染进程内完成，与手动操作走同一套 State + 落盘逻辑，
-   因此列表、标签栏、编辑器与磁盘上的笔记文件都能即时保持一致；每次写操作都登记一份撤销快照。 */
-
-// 一次提问内最多允许执行的工具步数，避免模型陷入循环
 const AI_AGENT_MAX_STEPS = 6;
-// 工具结果的字符上限（read_note 摘要、list_notes 条数）
+
 const AI_AGENT_READ_CHAR_LIMIT = 20000;
 const AI_AGENT_LIST_LIMIT = 100;
 
-// 会话内的撤销快照：stepId -> { label, apply() }
 const aiAgentUndoEntries = new Map();
-
-// ---------- 工具定义 ----------
 
 const AI_AGENT_TOOLS = [
     {
@@ -128,13 +120,10 @@ const AI_AGENT_TOOLS = [
     }
 ];
 
-// ---------- 开关 ----------
-
 function isAiAgentMode() {
     return !!State.ai && !!State.ai.agentMode;
 }
 
-// Agent 模式下才把工具定义下发给模型
 function buildAiAgentToolPayload() {
     return isAiAgentMode() ? AI_AGENT_TOOLS : [];
 }
@@ -142,21 +131,18 @@ function buildAiAgentToolPayload() {
 function syncAiAgentToggle() {
     const toggle = document.getElementById('ai-agent-toggle');
     if (!toggle) return;
-    // 外观沿用标题栏 AI 助手按钮那一套：开启时挂 .active，颜色与底色由 .btn-action-icon.active 给
+
     const on = isAiAgentMode();
     toggle.classList.toggle('active', on);
     toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
 }
 
-// 直接切换开关，不再弹确认框；开启后的风险提示由输入区上方的说明与每次操作的「撤销」按钮承担
 function toggleAiAgentMode(enabled) {
     State.ai = normalizeAiConfig({ ...State.ai, agentMode: !!enabled });
     flushAiConfigSave();
     syncAiAgentToggle();
     showToast(enabled ? 'Agent 模式已开启：AI 可以修改笔记' : 'Agent 模式已关闭');
 }
-
-// ---------- 撤销 ----------
 
 function registerAiAgentUndo(stepId, entry) {
     if (!stepId || !entry) return;
@@ -183,16 +169,12 @@ function undoAiAgentStep(stepId) {
     }
 }
 
-// ---------- 查笔记的小工具 ----------
-
 function findNoteById(id) {
     const value = typeof id === 'string' ? id.trim() : '';
     if (!value) return null;
     return State.notes.find(note => note.id === value) || null;
 }
 
-// 模型经常直接给标题，这里按 id 找不到时再按标题唯一匹配一次。
-// 隐藏与加了密码的条目不进这个兜底匹配（它们同样不在列表工具的结果里）
 function resolveAiAgentNote(rawId) {
     const direct = findNoteById(rawId);
     if (direct) return direct;
@@ -220,12 +202,10 @@ function folderExists(name) {
     return State.folders.includes(name);
 }
 
-// 写操作前的统一准备：先落盘编辑器里未提交的改动，保证读到的是最新正文
 function prepareNoteWrite() {
     flushPendingSave();
 }
 
-// 写操作完成后把该笔记写回文件（无笔记改动时传空）并刷新界面
 function commitNoteWrite(note) {
     if (note) saveNote(note);
     renderApp();
@@ -243,8 +223,6 @@ function noteSummary(note) {
     };
 }
 
-// ---------- 工具执行 ----------
-
 function toolOk(summary, detail, payload) {
     return { ok: true, summary, detail: detail || '', content: JSON.stringify(payload == null ? { ok: true } : payload) };
 }
@@ -259,8 +237,7 @@ function runListNotes(args) {
     const keyword = typeof args.keyword === 'string' ? args.keyword.trim().toLowerCase() : '';
     const limit = Math.min(Math.max(Number(args.limit) || 20, 1), AI_AGENT_LIST_LIMIT);
 
-    // 秘密本：隐藏的条目不对模型可见，设了密码的条目同样不进列表工具的结果
-    let notes = State.notes.filter(note => !note.isTrashed && !isSecretHidden(note) && note.locked !== true);
+let notes = State.notes.filter(note => !note.isTrashed && !isSecretHidden(note) && note.locked !== true);
     if (folder) notes = notes.filter(note => (note.folder || '默认') === folder);
     if (tag) notes = notes.filter(note => Array.isArray(note.tags) && note.tags.includes(tag));
     if (keyword) {
@@ -289,7 +266,7 @@ function runListNotes(args) {
 function runReadNote(args) {
     const note = resolveAiAgentNote(args.id);
     if (!note) return toolFail(`没有找到笔记：${String(args.id || '').trim() || '（未提供 id）'}`);
-    // 加密码的条目正文在解锁前是密文，读出来只会是一串 base64
+
     if (isSecretLocked(note)) return toolFail(`《${note.title || '未命名笔记'}》正文已加密，需要先在应用里解锁`);
 
     const content = String(note.content || '');
@@ -320,7 +297,7 @@ function runCreateNote(args) {
         tags: normalizeTagList(args.tags),
         isPinned: !!args.pinned,
         isTrashed: false,
-        // 秘密本：AI 新建的笔记既不隐藏也不加密
+
         isHidden: false,
         locked: false,
         createdAt: now,
@@ -477,7 +454,7 @@ function runCreateFolder(args) {
     }
 
     State.folders.push(name);
-    // 文件夹列表属于偏好配置，随 config.json 保存
+
     saveConfig();
     renderApp();
 
@@ -501,8 +478,7 @@ async function runTrashNote(args) {
     if (!note) return toolFail(`没有找到笔记：${String(args.id || '').trim() || '（未提供 id）'}`);
     if (note.isTrashed) return toolOk(`《${note.title || '未命名笔记'}》已在废纸篓中`, '', { ok: true, id: note.id, trashed: true });
 
-    // 删除类操作即使由 AI 发起也必须经过用户确认
-    const confirmed = await showConfirm(`将《${note.title || '未命名笔记'}》移入废纸篓？`, {
+const confirmed = await showConfirm(`将《${note.title || '未命名笔记'}》移入废纸篓？`, {
         title: 'AI 请求移入废纸篓',
         detail: '这是 AI 发起的操作。移入废纸篓后仍可在废纸篓中恢复。',
         type: 'question',
@@ -526,7 +502,6 @@ async function runTrashNote(args) {
     };
 }
 
-// 执行一次工具调用：参数为模型给的 JSON 字符串，结果回传给模型
 async function executeAiAgentTool(name, rawArguments) {
     let args = {};
     if (typeof rawArguments === 'string' && rawArguments.trim()) {
@@ -556,8 +531,6 @@ async function executeAiAgentTool(name, rawArguments) {
         return toolFail(`执行失败：${err && err.message ? err.message : '未知错误'}`);
     }
 }
-
-// ---------- 初始化 ----------
 
 function initAiAgent() {
     const toggle = document.getElementById('ai-agent-toggle');

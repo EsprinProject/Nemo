@@ -1,8 +1,3 @@
-/* 条目右键菜单与「新建」菜单：
-   右键菜单按条目类型与状态（普通 / 废纸篓中）动态生成；
-   文件夹另有一套右键菜单（重命名 / 删除），见文件末尾；
-   新建菜单用于选择新建笔记、新建待办，或把本地的 .md / .txt 文件导入为笔记。 */
-
 let contextItemId = null;
 
 function contextMenuItems(item) {
@@ -14,7 +9,7 @@ function contextMenuItems(item) {
             { action: 'restore', icon: 'restore_from_trash', label: `恢复${label}` },
             { action: 'export', icon: 'file_download', label: '导出 Markdown' }
         ];
-        // 共享过来的笔记属于所有者：删除要经「退出共享」，不给彻底删除
+
         if (isSharedItem(item)) {
             items.push({ action: 'leave-share', icon: 'link_off', label: '退出共享', danger: true });
         } else {
@@ -27,8 +22,7 @@ function contextMenuItems(item) {
         { action: 'open', icon: 'open_in_new', label: '在标签页打开' }
     ];
 
-    // 待办额外提供完成状态切换
-    if (isTodoItem(item)) {
+if (isTodoItem(item)) {
         items.push({
             action: 'toggle-done',
             icon: item.isDone ? 'check_box_outline_blank' : 'check_circle',
@@ -42,12 +36,9 @@ function contextMenuItems(item) {
         label: item.isPinned ? '取消置顶' : `置顶${label}`
     });
 
-    // 桌面便利贴：把这条内容贴到桌面上（见 scripts/sticky_notes.js）
-    items.push({ action: 'stick', icon: 'keep', label: '贴到桌面' });
+items.push({ action: 'stick', icon: 'keep', label: '贴到桌面' });
 
-    /* 共享过来的笔记：隐藏、密码与废纸篓都会连带改到所有者那一篇（或本就删不掉），
-       因此只给「打开 / 置顶 / 导出 / 退出共享」这一组动作 */
-    if (isSharedItem(item)) {
+if (isSharedItem(item)) {
         items.push(
             { action: 'export', icon: 'file_download', label: '导出 Markdown' },
             { action: 'leave-share', icon: 'link_off', label: '退出共享', danger: true }
@@ -56,8 +47,7 @@ function contextMenuItems(item) {
     }
 
     items.push(
-        /* 秘密本：隐藏与密码。隐藏后条目不再出现在任何列表里，只能去「设置 → 秘密本」找回，
-           因此这里给出的入口在隐藏后仍然留着一个「取消隐藏」的提示（列表右键菜单虽已看不到它） */
+
         {
             action: 'hide',
             icon: item.isHidden === true ? 'visibility' : 'visibility_off',
@@ -70,14 +60,11 @@ function contextMenuItems(item) {
         }
     );
 
-    // 已解锁的加密条目：再给一个马上重新上锁的入口（关闭应用同样会失去内存里的密钥）
-    if (item.locked === true && item.unlocked === true) {
+if (item.locked === true && item.unlocked === true) {
         items.push({ action: 'lock-now', icon: 'lock', label: '立即锁定' });
     }
 
-    /* 团队笔记：只对笔记开放，且先同步到服务端才共享得出去（见 scripts/team_notes.js）。
-       加密条目共享出去的是密文，隐藏条目本就不在列表里，因此这两种不给入口 */
-    if (!isTodoItem(item) && !isSecretItem(item)) {
+if (!isTodoItem(item) && !isSecretItem(item)) {
         items.push({ action: 'share', icon: 'share', label: '共享…' });
     }
 
@@ -117,8 +104,7 @@ function showContextMenu(x, y, itemId) {
     menu.style.top = `${y}px`;
     menu.classList.remove('hidden');
 
-    // 菜单项数量随条目状态变化，显示后再校正一次位置，避免溢出窗口
-    const rect = menu.getBoundingClientRect();
+const rect = menu.getBoundingClientRect();
     menu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - rect.width - 4))}px`;
     menu.style.top = `${Math.max(4, Math.min(y, window.innerHeight - rect.height - 4))}px`;
 }
@@ -164,8 +150,6 @@ document.getElementById('note-context-menu').onclick = (e) => {
     hideContextMenu();
 };
 
-/* 文件夹右键菜单：重命名与删除。
-   「默认」是条目没有归属时的落脚点，既不能改名也不能删除，因此不为它开菜单 */
 function showFolderContextMenu(x, y, folder) {
     if (folder === '默认') return;
     hideContextMenu();
@@ -208,7 +192,7 @@ function hideFolderContextMenu() {
 document.getElementById('folder-context-menu').onclick = (e) => {
     const target = e.target.closest('[data-action]');
     if (!target) return;
-    // 文件夹名随菜单内容一起记在元素上，每次重建时覆盖
+
     const folder = e.currentTarget.dataset.folder;
     const action = target.getAttribute('data-action');
     hideFolderContextMenu();
@@ -217,24 +201,18 @@ document.getElementById('folder-context-menu').onclick = (e) => {
     else if (action === 'delete-folder') deleteFolder(folder);
 };
 
-/* 新建菜单：侧边栏顶部的「新建」与空状态按钮共用，用于新建笔记 / 待办，或导入现成的文件。
-   外观直接复用下拉菜单（styles/dropdown.css 的 .dropdown-menu / .dropdown-option），
-   这里只负责建条目与定位，不再另写一套菜单样式 */
-
-// 菜单条目：前两项与快捷键 Ctrl+N / Ctrl+Shift+N 一一对应，末项用于导入现成的文件
 const NEW_ITEM_ACTIONS = [
     { action: 'new-note', icon: 'description', label: '新建笔记' },
     { action: 'new-todo', icon: 'check_box', label: '新建待办' },
     { action: 'import-note', icon: 'file_upload', label: '导入文件' }
 ];
 
-// 在触发按钮下方展开菜单（超出窗口时会自动回收到可视区内）
 function showNewItemMenu(anchor) {
     const menu = document.getElementById('new-item-menu');
     menu.innerHTML = '';
 
     NEW_ITEM_ACTIONS.forEach(entry => {
-        // 条目与下拉菜单里的选项同构：图标 + 文字
+
         const el = document.createElement('button');
         el.type = 'button';
         el.className = 'dropdown-option';
@@ -268,7 +246,6 @@ function hideNewItemMenu() {
     document.getElementById('new-item-menu').classList.add('hidden');
 }
 
-// 同一个按钮反复点击时在展开与收起之间切换
 function toggleNewItemMenu(anchor) {
     const menu = document.getElementById('new-item-menu');
     if (menu.classList.contains('hidden')) showNewItemMenu(anchor);
@@ -285,14 +262,10 @@ document.getElementById('new-item-menu').onclick = (e) => {
     else if (action === 'import-note') importNoteFiles();
 };
 
-// 点击菜单以外的地方收起两个菜单；点触发按钮本身交由按钮的点击处理切换。
-// 现代布局下侧边栏的「新建」不再开菜单（它自己就是「新建笔记」，见 scripts/events.js），
-// 因此只有空状态那一个（以及经典布局下侧边栏那一个）算触发按钮——
-// 否则空状态菜单开着时点侧边栏的「新建」，菜单赖着不收、还顺手新建了一篇
 window.addEventListener('click', (e) => {
     if (!e.target.closest('#note-context-menu')) hideContextMenu();
     if (!e.target.closest('#folder-context-menu')) hideFolderContextMenu();
-    // 桌面便利贴菜单：点触发按钮本身交由按钮的点击处理切换
+
     if (!e.target.closest('#sticky-notes-menu') && !e.target.closest('#btn-sticky-notes')) {
         if (typeof hideStickyMenu === 'function') hideStickyMenu();
     }

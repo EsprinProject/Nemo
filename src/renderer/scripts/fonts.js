@@ -1,6 +1,3 @@
-/* 字体设置：读取本机字体列表，并把界面/文档的西文与 CJK 字体写入 CSS 变量 */
-
-// 内置常用字体：读取系统字体列表失败时兜底，同时用于在下拉框顶部置顶常用项
 const COMMON_FONT_FAMILIES = [
     'Inter', 'Segoe UI', 'Helvetica Neue', 'Arial', 'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Noto Sans',
     'Georgia', 'Times New Roman', 'Cambria', 'Source Serif 4', 'Palatino Linotype',
@@ -9,10 +6,8 @@ const COMMON_FONT_FAMILIES = [
     'Noto Sans SC', 'Noto Serif SC', 'Source Han Sans SC', 'Source Han Serif SC', 'LXGW WenKai', 'Microsoft JhengHei'
 ];
 
-// 仅用于列表分组：字体名称含 CJK 字符的归入「中日韩字体」
 const CJK_FAMILY_PATTERN = /[\u2E80-\u9FFF\u3040-\u30FF\u31C0-\u31EF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/;
 
-// 读取本机字体：优先使用 Chromium 的 Local Font Access API，其次回退到主进程字体文件解析
 async function queryFontsViaApi() {
     if (typeof window.queryLocalFonts !== 'function') return null;
     try {
@@ -186,14 +181,13 @@ async function loadFontList() {
     }
 }
 
-// 幂等的按需加载入口：同一时刻只跑一轮枚举，中途重复调用共享同一个 Promise
 let fontListPromise = null;
 
 function ensureFontListLoaded() {
     if (fontListPopulated) return null;
     if (!fontListPromise) {
         fontListPromise = loadFontList().finally(() => {
-            // 没能成功填充时清掉 Promise，允许下次进入设置页再试一次
+
             if (!fontListPopulated) fontListPromise = null;
         });
     }
@@ -208,11 +202,10 @@ function initFonts() {
             State.fonts[config.key] = e.target.value || '';
             applyFonts();
             saveConfig();
-            // 小本本窗口用的是同一套字体，改完立即同步过去（函数来自 appearance.js）
+
             if (typeof syncScratchpadAppearance === 'function') syncScratchpadAppearance();
         };
     });
 
-    // 首屏已注入过一遍，这里再同步一次以兜底
-    applyFonts();
+applyFonts();
 }

@@ -2,11 +2,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-// 主进程字体枚举：直接解析字体文件的 name 表，拿到准确的字体族名。
-// 作为渲染进程 Local Font Access API 不可用时的兜底方案（无需任何第三方依赖）。
-
 const FONT_EXTENSIONS = new Set(['.ttf', '.otf', '.ttc', '.otc']);
-const MAX_NAME_TABLE_BYTES = 1 << 20; // name 表最多读取 1MB，避免异常文件撑爆内存
+const MAX_NAME_TABLE_BYTES = 1 << 20;
 const MAX_FONT_FILES = 20000;
 const MAX_SCAN_DEPTH = 4;
 
@@ -18,7 +15,6 @@ function isDirectory(dir) {
   }
 }
 
-// Windows 字体目录
 function getFontDirs() {
   const home = os.homedir();
   const winDir = process.env.WINDIR || 'C:\\Windows';
@@ -58,7 +54,6 @@ function readAt(fd, length, position) {
   return buffer.subarray(0, bytesRead);
 }
 
-// 解析 name 表的字符串记录，优先取排版族名（nameID 16），其次取族名（nameID 1）
 function parseNameTable(table) {
   if (table.length < 6) return null;
 
@@ -82,7 +77,7 @@ function parseNameTable(table) {
     if (!length || start + length > table.length) continue;
 
     const raw = table.subarray(start, start + length);
-    // Windows(3)/Unicode(0) 平台使用 UTF-16BE
+
     let text = '';
     if (platformID === 3 || platformID === 0) {
       if (raw.length % 2 === 0) text = Buffer.from(raw).swap16().toString('utf16le').trim();
@@ -91,8 +86,7 @@ function parseNameTable(table) {
     }
     if (!text) continue;
 
-    // 英文族名优先，排版族名优先于普通族名
-    const isEnglish = languageID === 0x0409 || platformID === 0;
+const isEnglish = languageID === 0x0409 || platformID === 0;
     const score = (nameID === 16 ? 2 : 0) + (isEnglish ? 1 : 0);
     if (score > bestScore) {
       bestScore = score;
@@ -103,7 +97,6 @@ function parseNameTable(table) {
   return best;
 }
 
-// 读取单个字体文件（含 ttc/otc 集合）的族名
 function readFontFamilies(fontPath) {
   let fd = null;
   const families = new Set();
@@ -117,7 +110,7 @@ function readFontFamilies(fontPath) {
     const offsets = [];
 
     if (signature === 'ttcf') {
-      // 字体集合：每个子字体有独立的表目录，表偏移相对文件起始位置
+
       const numFonts = header.readUInt32BE(8);
       if (numFonts > 512) return families;
       const list = readAt(fd, numFonts * 4, 12);
@@ -153,13 +146,13 @@ function readFontFamilies(fontPath) {
       }
     }
   } catch (error) {
-    // 单个字体文件解析失败不影响整体枚举
+
   } finally {
     if (fd !== null) {
       try {
         fs.closeSync(fd);
       } catch (error) {
-        // 忽略
+
       }
     }
   }
@@ -167,7 +160,6 @@ function readFontFamilies(fontPath) {
   return families;
 }
 
-// 返回本机已安装的字体族名列表（去重、忽略大小写、按名称排序）
 function listSystemFonts() {
   const files = [];
   getFontDirs().forEach((dir) => collectFontFiles(dir, files, MAX_SCAN_DEPTH));

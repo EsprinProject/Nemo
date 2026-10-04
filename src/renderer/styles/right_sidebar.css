@@ -1,52 +1,42 @@
-/* AI 助手：工作区右侧的对话面板，以及设置页的接口配置项 */
-
-/* 标题栏入口：面板展开时高亮 */
 .btn-action-icon.active {
     color: var(--accent);
     background-color: var(--accent-bg);
 }
 
-/* 1. 对话面板 */
+.fmt-btn.active {
+    color: var(--accent);
+    background-color: var(--accent-bg);
+}
+
 .ai-panel {
     position: relative;
-    /* 面板宽度：收起 / 展开的宽度过渡与内部各区块的固定绘制宽度共用这一个变量 */
+
     --ai-panel-width: 360px;
     width: var(--ai-panel-width);
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     min-width: 0;
-    /* 收起 / 展开靠裁切实现：内容按原始宽度绘制（见下方 min-width 那组规则），
-       面板变窄时把多出来的部分裁掉，看上去就是整块面板往右滑出去 */
+
     overflow: hidden;
     background-color: var(--bg-list);
     border-left: 1px solid var(--border-color);
-    /* 只过渡宽度与左侧分隔线，其余属性不参与——免得连带触发多余的重排 */
+
     transition: width var(--motion-slow) cubic-bezier(0.22, 0.61, 0.36, 1),
                 border-left-width var(--motion-slow) ease;
 }
 
-/* 收起态：宽度收到 0，左侧分隔线一并收到 0 宽（否则窗口右缘会留下一条 1px 的竖线）。
-   这里用 border-left-width 而不是把它变透明：Alom 风格用更高优先级的 border-color
-   重刷了这条边框（见 styles/alom.css），改颜色在那套风格下会被盖掉。
-   这个类由 scripts/ai.js 挂上与摘掉；真正移出布局（.hidden）要等宽度过渡走完——
-   .hidden 是 display: none，一旦先挂上，过渡就没机会播了 */
 .ai-panel.ai-collapsed {
     width: 0;
     border-left-width: 0;
 }
 
-/* 收起 / 展开过程中内容不跟着变窄：仍按面板原始宽度绘制，多出来的部分交给上面的
-   overflow: hidden 裁掉。否则每一帧都要重排文字，看着是「被挤扁」而不是「滑出去」。
-   .ai-drawer 不在此列：它是绝对定位、随面板宽度伸缩，且收起时会立刻关闭，不会被挤压 */
 .ai-panel-header,
 .ai-messages,
 .ai-composer {
     min-width: var(--ai-panel-width);
 }
 
-/* 现代布局的窗口拖动区：垫在面板顶栏上方的一条空白（默认不存在，见 styles/mode.css）。
-   高度与悬浮在右上角的按钮组一致，因此同时也把面板顶栏让到按钮下面 */
 .ai-panel-drag-strip {
     display: none;
     height: 40px;
@@ -81,7 +71,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
-/* 顶栏图标密集，按钮略窄一些 */
+
 .ai-panel-header .btn-action-icon {
     width: 24px;
     height: 24px;
@@ -91,7 +81,6 @@
     flex: 1;
 }
 
-/* 2. 对话记录抽屉：盖在消息区之上，不挤压对话内容 */
 .ai-drawer {
     position: absolute;
     top: 40px;
@@ -181,7 +170,7 @@
     font-size: 10.5px;
     color: var(--text-muted);
 }
-/* 正在生成回答的对话：在列表中一眼可见 */
+
 .ai-chat-item-meta.streaming {
     color: var(--accent);
 }
@@ -192,7 +181,7 @@
     opacity: 0;
     transition: opacity 0.15s;
 }
-/* 鼠标悬停或当前对话时露出重命名 / 删除 */
+
 .ai-chat-item:hover .ai-chat-item-actions,
 .ai-chat-item.active .ai-chat-item-actions {
     opacity: 1;
@@ -240,7 +229,6 @@
     color: var(--text-primary);
 }
 
-/* 3. 对话记录（消息气泡） */
 .ai-messages {
     flex: 1;
     min-height: 0;
@@ -326,7 +314,7 @@
     word-break: break-word;
     overflow-wrap: anywhere;
 }
-/* 用户提问：强调色底、保留换行 */
+
 .ai-msg-user .ai-msg-body {
     background: var(--accent-bg);
     border-color: transparent;
@@ -337,17 +325,13 @@
     border-color: var(--danger);
     color: var(--danger);
 }
-/* 主动停止：弱化提示，不当成错误 */
+
 .ai-msg-canceled .ai-msg-body {
     background: transparent;
     border-style: dashed;
     color: var(--text-muted);
 }
-/* 回复正文要能用鼠标拖选：全局重置（styles/base.css 里的 *）把所有元素都写成了
-   user-select: none，而这个属性不继承——子节点只认自己那一层，不会从父节点顺回 text。
-   因此正文得连同它内部的 Markdown 节点（<p> / <li> / <code> 等）一起放行，
-   否则只有提问那种直接写在正文里的纯文本能选，带标签的回答整块都选不中。
-   Agent 卡片里的步骤摘要与详情同理 */
+
 .ai-msg-content,
 .ai-msg-content *,
 .ai-step-label,
@@ -355,7 +339,7 @@
     user-select: text;
     cursor: text;
 }
-/* 回答里的 Markdown 排版：收掉尾段多余的行距，字号比正文小一档 */
+
 .ai-msg-body .markdown-body {
     font-size: 12.5px;
     line-height: 1.65;
@@ -370,7 +354,6 @@
     color: var(--text-muted);
 }
 
-/* 回答下方的操作：复制 / 插入当前笔记 / 存为新笔记 */
 .ai-msg-actions {
     display: flex;
     flex-wrap: wrap;
@@ -397,7 +380,6 @@
     color: var(--text-primary);
 }
 
-/* 4. 输入区 */
 .ai-composer {
     flex-shrink: 0;
     display: flex;
@@ -405,9 +387,7 @@
     gap: 8px;
     padding: 10px 12px 12px 12px;
 }
-/* 输入框这一层「字段」：边框、底色与圆角挂在它身上，正文与内部那条底栏各占一行。
-   底栏排在正文下方而不是叠在正文上，所以输入框内部滚动时正文不会钻到按钮底下；
-   底栏左端是附带范围下拉，右端依次是 Agent 模式开关、附件与发送按钮。 */
+
 .ai-input-wrap {
     display: flex;
     flex-direction: column;
@@ -436,34 +416,27 @@
 .ai-composer-bar {
     display: flex;
     align-items: center;
-    /* 靠左排：下拉留在左端，右端按钮组由下拉的 auto 外边距顶到最右缘。
-       不能用 space-between / center——那会把下拉推到正中，与左端空出一大段 */
+
     justify-content: flex-start;
-    /* 下拉与右端按钮组之间不靠 gap 留白，而由下拉右侧那唯一的 auto 外边距撑开；
-       gap 只作为两侧的最小间距兜底 */
+
     gap: 6px;
-    /* 贴在输入框内沿：左边与正文的左内边距对齐，右边与底边各留一点余量 */
+
     padding: 0 6px 6px 10px;
 }
-/* 附带范围下拉（自绘下拉的外层见 styles/dropdown.css）：笔记名可能很长，
-   所以它得会缩——缩到放不下时由触发器里的 .dropdown-label 显示省略号。
-   它右侧的 auto 外边距负责把右端按钮组（Agent 开关 / 附件 / 发送）顶到最右缘，
-   是全栏唯一的弹性空档；按钮组上不再加第二个 auto，两个 auto 会互相抢空间 */
+
 .ai-composer-bar .dropdown {
     flex: 0 1 auto;
     min-width: 0;
     margin-right: auto;
 }
-/* 右端按钮组：Agent 模式开关、附件、发送（停止）依次排列，贴在最右缘，
-   自身不吃弹性空间，推开它的空档由左侧 .dropdown 的 auto 外边距负责 */
+
 .ai-composer-actions {
     display: flex;
     align-items: center;
     gap: 6px;
     flex-shrink: 0;
 }
-/* 发送按钮：只留一枚图标、不带按钮底色，颜色用主题色（--accent 跟随品牌色设置）。
-   尺寸与旁边的附件按钮一致，停在这一行的右端 */
+
 .ai-send-btn {
     width: 28px;
     height: 28px;
@@ -478,12 +451,12 @@
 .ai-send-btn:hover:not(:disabled) {
     opacity: 0.75;
 }
-/* 不可发送时（输入框空着）淡淡地留在原地：颜色仍是主题色，只是褪下去一档 */
+
 .ai-send-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
 }
-/* 停止按钮：占的是同一个位置，换成中性色以便与「发送」区分开 */
+
 #btn-ai-stop {
     color: var(--text-secondary);
 }
@@ -492,7 +465,6 @@
     opacity: 1;
 }
 
-/* 5. 附件：待发送条、缩略图与消息里的附件卡片 */
 .ai-attach-strip {
     display: flex;
     flex-wrap: wrap;
@@ -518,7 +490,7 @@
     background: var(--bg-body);
     color: var(--text-secondary);
 }
-/* 待发送的附件在深色底上更明显一点 */
+
 .ai-attach-strip .ai-attach-chip {
     background: var(--item-hover);
 }
@@ -560,7 +532,7 @@
     background: var(--item-active);
     color: var(--danger);
 }
-/* 把文件拖到面板上时的投放提示 */
+
 .ai-panel.drop-active {
     outline: 2px dashed var(--accent);
     outline-offset: -6px;
@@ -568,23 +540,18 @@
 .ai-panel.drop-active .ai-input-wrap {
     border-color: var(--accent);
 }
-/* 6. 底栏：左起附带范围下拉，右端是 Agent 模式开关、附件与发送两枚按钮。
-   开关与附件都走 .btn-action-icon（与标题栏的 AI 助手按钮同一套），
-   与发送按钮同尺寸；开关开启时由 .btn-action-icon.active 点亮，不必另写样式。 */
+
 .ai-composer-bar .btn-action-icon {
     width: 28px;
     height: 28px;
     flex-shrink: 0;
 }
 .ai-composer-bar .ai-scope-select {
-    /* 触发器继承了原生 select 的 flex-shrink: 0，这里放开，
-       笔记名过长时才能收缩、由 .dropdown-label 出省略号。
-       位置完全交给外层 .dropdown 决定，这里不再加任何 auto / 负外边距 */
+
     flex-shrink: 1;
     min-width: 0;
 }
 
-/* Agent 操作卡片：一轮工具调用与它们的执行结果 */
 .ai-msg-agent .ai-msg-body {
     border-style: dashed;
 }
@@ -630,7 +597,6 @@
     word-break: break-word;
 }
 
-/* 7. 设置页：AI 分类里的输入控件 */
 .settings-input {
     flex-shrink: 0;
     width: 260px;
@@ -666,7 +632,7 @@
     gap: 8px;
     flex-shrink: 0;
 }
-/* 地址输入：输入框 + 常用站点快捷填入（按钮贴在输入框下方右对齐） */
+
 .ai-input-stack {
     display: flex;
     flex-direction: column;
@@ -679,7 +645,7 @@
     align-items: center;
     gap: 6px;
 }
-/* API Key 的保管状态：说明密钥存在哪里，不含任何密钥内容 */
+
 .ai-key-hint {
     font-size: 11px;
     color: var(--text-muted);
@@ -702,12 +668,12 @@
     color: var(--accent);
     background: var(--accent-bg);
 }
-/* 纯图标按钮：与输入框等高 */
+
 .settings-btn.icon-only {
     width: 30px;
     padding: 0;
 }
-/* 配置状态行：正常为说明文字，测试通过 / 失败时着色 */
+
 .ai-status[data-tone='ok'] {
     color: var(--accent);
 }
@@ -715,10 +681,166 @@
     color: var(--danger);
 }
 
-/* 动效偏好：收起 / 展开是纯视觉的宽度过渡（收尾靠定时器，不依赖 transitionend），
-   系统开启「减少动态效果」时直接去掉，面板瞬间到位 */
 @media (prefers-reduced-motion: reduce) {
     .ai-panel {
+        transition: none !important;
+    }
+}
+
+.fm-panel {
+    position: relative;
+    --fm-panel-width: 260px;
+    width: var(--fm-panel-width);
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    background-color: var(--bg-list);
+    border-left: 1px solid var(--border-color);
+    transition: width var(--motion-slow) cubic-bezier(0.22, 0.61, 0.36, 1),
+                border-left-width var(--motion-slow) ease;
+}
+
+.fm-panel.fm-collapsed {
+    width: 0;
+    border-left-width: 0;
+}
+
+.fm-panel-header {
+    height: 34px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px 0 12px;
+    border-bottom: 1px solid var(--border-light);
+    color: var(--text-secondary);
+}
+
+.fm-panel-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.fm-file-count {
+    font-size: 10.5px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.fm-panel-spacer {
+    flex: 1;
+}
+
+.fm-panel-header .btn-action-icon {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+}
+
+.fm-file-list-wrap {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.fm-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 40px 20px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.fm-empty .ms-icon {
+    font-size: 32px;
+    opacity: 0.4;
+}
+
+.fm-empty p {
+    font-size: 12px;
+}
+
+.fm-file-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.fm-file-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-light);
+    cursor: grab;
+    transition: background-color 0.12s;
+}
+
+.fm-file-row:active {
+    cursor: grabbing;
+}
+
+.fm-file-row:hover {
+    background-color: var(--item-hover);
+}
+
+.fm-file-icon {
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+.fm-file-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.fm-file-name {
+    font-size: 12px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.fm-file-size {
+    font-size: 10.5px;
+    color: var(--text-muted);
+}
+
+.fm-file-actions {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.12s;
+}
+
+.fm-file-row:hover .fm-file-actions {
+    opacity: 1;
+}
+
+.fm-file-action {
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-sm);
+}
+
+.fm-file-action-danger:hover {
+    color: var(--danger);
+    background-color: var(--danger-bg, rgba(220, 38, 38, 0.1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fm-panel {
         transition: none !important;
     }
 }

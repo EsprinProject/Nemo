@@ -1,19 +1,10 @@
-/* 自建同步（设置 → 数据与存储）：服务器地址、账户登录、设备名、访问令牌与自动同步节奏。
-
-   同步本身在主进程完成（见 src/main/sync_server.js），采用操作日志模型：
-   本地每次保存/删除都变成一条操作推给服务端，服务端给每条操作分配序号并写进 append-only 日志；
-   客户端只记住「已应用到第几号」，同步时拉取后面的操作并重放。
-   删除因此就是删除：任何一方重放都得到相同结果，不会出现删除后又被补写回来的情况。
-   令牌只在提交时交给主进程（存进系统密钥链），界面只回显「有没有保存」。 */
-
-// 输入过程中攒一下再落盘，避免每敲一个字符就写一次 config.json
 const SYNC_CONFIG_SAVE_DELAY = 400;
 let syncConfigSaveTimer = null;
-// 服务端要求账户密码至少 8 位（见 sync.py 的 MIN_PASSWORD_LENGTH）
+
 const SYNC_PASSWORD_MIN = 8;
-// 同步进行中：按钮统一置灰
+
 let syncBusy = false;
-// 最近一次从主进程取回的同步状态（状态行与描述都要用）
+
 let syncServerStatus = null;
 
 function isSyncEnabled() {
@@ -32,20 +23,14 @@ function scheduleSyncConfigSave() {
     }, SYNC_CONFIG_SAVE_DELAY);
 }
 
-/* 配置落盘。这里必须无条件写一次：saveConfig 自己会在内容没变时跳过，
-   但拨动开关、选自动同步间隔这些操作并不会产生「待保存的输入」，
-   依赖防抖定时器就会出现「界面已打开、主进程却还以为没启用」的情形 */
 function flushSyncConfigSave() {
     clearTimeout(syncConfigSaveTimer);
     syncConfigSaveTimer = null;
     saveConfig();
-    // 地址 / 间隔可能刚被改过：让主进程按最新配置重建自动同步的定时器
+
     syncSyncAutoSetting();
 }
 
-/* ---------------- 自动同步 ---------------- */
-
-// 秒数 → 人读的间隔（60 的整数倍按分钟写）
 function formatSyncInterval(seconds) {
     const num = normalizeAutoSyncSeconds(seconds);
     if (num >= 60 && num % 60 === 0) return `${num / 60} 分钟`;
@@ -56,7 +41,7 @@ function describeSyncAutoSetting() {
     const config = syncConfig();
     if (config.autoSync === 'custom') return `每 ${formatSyncInterval(config.autoSyncSeconds)}`;
     const seconds = SYNC_AUTO_SYNC_PRESETS[config.autoSync];
-    // 「不自动同步」只是不定时跑：每次启动应用仍会同步一次，本地保存与删除也即时推送
+
     return seconds > 0 ? `每 ${formatSyncInterval(seconds)}` : '不定时（每次启动仍同步一次）';
 }
 
@@ -66,7 +51,6 @@ function readSyncAutoSelection() {
     return SYNC_AUTO_SYNC_VALUES.includes(value) ? value : 'off';
 }
 
-// 「自定义」间隔：把填的数字按所选单位换算成秒
 function readSyncAutoSecondsFromForm() {
     const input = document.getElementById('setting-sync-autosync-value');
     const unit = document.getElementById('setting-sync-autosync-unit');
@@ -76,7 +60,6 @@ function readSyncAutoSecondsFromForm() {
     return normalizeAutoSyncSeconds(seconds);
 }
 
-// 自定义间隔的输入框：秒数能被 60 整除时用「分钟」显示；非自定义时整块隐藏
 function syncSyncAutoCustomInputs(config) {
     const row = document.getElementById('setting-sync-autosync-custom-row');
     if (!row) return;
@@ -92,8 +75,6 @@ function syncSyncAutoCustomInputs(config) {
     if (unit) unit.value = useMinute ? 'minute' : 'second';
     if (input) input.value = String(useMinute ? seconds / 60 : seconds);
 }
-
-/* ---------------- 状态 ---------------- */
 
 function setSyncStatus(text, tone) {
     const status = document.getElementById('sync-status');
@@ -128,13 +109,12 @@ function describeSyncState() {
     return `已配置：${config.url}${device}；自动同步：${describeSyncAutoSetting()}。${progress}${last}`;
 }
 
-// 主进程上报的状态：出错时优先显示原因
 function applySyncStatus(status) {
     if (!status) return;
     syncServerStatus = status;
     State.syncTokenSaved = !!status.hasToken;
     applySyncDeviceId(status);
-    // 令牌的有无决定了「账户登录」那一行的提示（是否已登录、令牌是否已保存）
+
     applySyncLoginHint();
 
     if (status.lastError) setSyncStatus(`同步失败：${status.lastError}`, 'error');
@@ -149,7 +129,6 @@ async function refreshSyncStatus() {
     }
 }
 
-// 配置改完后让主进程按新间隔重建定时器，并把最新状态回填
 async function syncSyncAutoSetting() {
     try {
         applySyncStatus(await ipcRenderer.invoke('sync:apply-auto-sync'));
@@ -158,11 +137,6 @@ async function syncSyncAutoSetting() {
     }
 }
 
-/* ---------------- 设备 ID ---------------- */
-
-/* 设备 ID 由主进程生成一次并固定下来（保存在配置目录的 sync_state.json），
-   每条操作的 opId 里都带着它；在服务端创建令牌时填进「绑定设备」即可把该令牌的写入记在这台设备名下。
-   这里只做展示与复制：它本身不含任何凭据，也不参与鉴权。 */
 function applySyncDeviceId(status) {
     const input = document.getElementById('setting-sync-device-id');
     if (!input || !status) return;
@@ -186,16 +160,10 @@ function copySyncDeviceId() {
     }
 }
 
-/* ---------------- 可复用 ID ---------------- */
-
-/* 条目被删除后，它的 ID 会回到服务端的回收池；新建条目时优先取用，
-   于是「删掉的那一条腾出来的 ID」会重新落到新建的条目上（见 storage.js 的 generateUniqueItemId）。
-   生成 ID 是同步调用，不能每次都去等网络，所以这里先领一两个存着，
-   服务端会把领走的占住一小会儿，两台设备同时新建也不会撞到同一个 ID。 */
 const RECYCLE_CLAIM_COUNT = 2;
-// 服务端领回来的可复用 ID
+
 let recycledIdPool = [];
-// 本机刚彻底删掉的条目腾出来的 ID：最优先（服务端那边随后也会把它收进回收池）
+
 let locallyFreedIds = [];
 let recycledRefillPending = false;
 
@@ -203,12 +171,12 @@ async function refillRecycledIds(kind = '', retry = true) {
     if (!isSyncEnabled() || recycledRefillPending) return;
     recycledRefillPending = true;
     try {
-        // 服务端认的是 notes / todos（空表示两种都收），这里把条目类型换算过去
+
         const wanted = kind === 'todo' ? 'todos' : (kind === 'note' ? 'notes' : '');
         const claim = () => ipcRenderer.invoke('sync:claim-ids', { count: RECYCLE_CLAIM_COUNT, kind: wanted });
 
         let result = await claim();
-        // 池子里有 ID，但本机还没重放过对应的删除：先同步一次（把删除拉下来），再领一遍就有了
+
         if (result && result.ok && !result.ids.length && result.pending && retry) {
             const synced = await ipcRenderer.invoke('sync:now');
             if (synced && synced.ok) result = await claim();
@@ -216,10 +184,9 @@ async function refillRecycledIds(kind = '', retry = true) {
         if (!result || !result.ok) return;
 
         const ids = (Array.isArray(result.ids) ? result.ids : [])
-            // 服务端可能给出本机还在用着的 ID（本地那一条还没被删掉）：丢掉，别拿它去建新条目
+
             .filter((item) => item && item.id && !itemIdTaken(String(item.id)))
             .map((item) => ({ id: String(item.id), kind: String(item.kind || '') }));
-        // 领到新的就换上；服务端这次没有可发的，手里那几个先留着（它们在服务端仍然被占着）
         if (ids.length) recycledIdPool = ids;
     } catch (err) {
         console.error('领取可复用 ID 失败:', err);
@@ -228,8 +195,6 @@ async function refillRecycledIds(kind = '', retry = true) {
     }
 }
 
-// 本地彻底删掉一个条目：它腾出来的 ID 立刻就能再用（服务端那边随后会把它收进回收池）。
-// 直接记在本地这份清单里——下一次新建就用它，不必等一次同步往返（生成 ID 是同步调用，等不了网络）。
 function releaseRecycledItemId(relative) {
     const match = /^(notes|todos)\/([A-Za-z0-9_-]{1,64})\.md$/.exec(String(relative || ''));
     if (!match) return;
@@ -237,7 +202,6 @@ function releaseRecycledItemId(relative) {
     locallyFreedIds = [entry].concat(locallyFreedIds.filter((item) => item.id !== entry.id));
 }
 
-// 从一份清单里取一个 ID：优先同类型，没有同类型就取队首；取走即从清单里移除
 function takePoolId(list, prefix) {
     if (!list.length) return '';
     const sameKind = list.findIndex((item) => item.kind === prefix);
@@ -245,25 +209,22 @@ function takePoolId(list, prefix) {
     return entry ? String(entry.id) : '';
 }
 
-// 取一个回收来的 ID：优先同类型（笔记的给笔记、待办的给待办），没有就退而求其次
 function takeRecycledItemId(kind) {
     const prefix = kind === 'todo' ? 'todos' : 'notes';
-    // 本机刚彻底删掉的那几个最优先：本地确信那一条已经删干净了
+
     const local = takePoolId(locallyFreedIds, prefix);
     if (local) return local;
 
     if (!recycledIdPool.length) {
-        // 手里没存货：先补一批（这一次新建先按老办法随机生成，不在这里顺带做一次同步）
+
         refillRecycledIds(kind, false).catch(() => {});
         return '';
     }
     const id = takePoolId(recycledIdPool, prefix);
-    // 池子见底就顺手补一批，下一次新建仍然能拿到回收的 ID
+
     if (!recycledIdPool.length) refillRecycledIds(kind).catch(() => {});
     return id;
 }
-
-/* ---------------- 访问令牌：只经主进程进出 ---------------- */
 
 function applySyncTokenStatus(status) {
     State.syncTokenSaved = !!(status && status.hasToken);
@@ -271,7 +232,7 @@ function applySyncTokenStatus(status) {
 
     const input = document.getElementById('setting-sync-token');
     if (input) {
-        // 输入框里永远不放明文：已保存时留空，填写即表示「换成新的」
+
         input.placeholder = State.syncTokenSaved ? '已保存；输入新的令牌即可替换' : '令牌';
     }
     const clearBtn = document.getElementById('btn-sync-token-clear');
@@ -314,7 +275,7 @@ async function commitSyncTokenFromForm() {
         input.value = '';
         applySyncTokenStatus(result);
         refreshSyncStatus();
-        // 服务端要求令牌时，令牌补上之后同步才能跑起来
+
         syncSyncAutoSetting();
         showToast('同步令牌已保存');
         return true;
@@ -348,12 +309,6 @@ async function clearSyncToken() {
         setSyncStatus('清除令牌失败：与主进程通信异常，请重试', 'error');
     }
 }
-
-/* ---------------- 账户登录：账户名 + 密码换访问令牌 ----------------
-
-   桌面客户端持不住服务端的登录 Cookie，因此服务端另开了一个口子：
-   提交账户名与密码，由服务端为该账户签发一份访问令牌（见 sync.py 的 /admin/api/tokens/generate）。
-   密码只经主进程发一次请求，不落盘也不回显；拿到的令牌与手动填写走同一条路（系统密钥链）。 */
 
 function setSyncLoginHint(text) {
     const hint = document.getElementById('sync-login-hint');
@@ -391,8 +346,7 @@ async function loginSyncAccount() {
         return;
     }
 
-    // 每次登录都会让服务端再签发一个令牌：已经能用的时候先确认一次，免得白白攒下一堆旧令牌
-    if (State.syncTokenSaved) {
+if (State.syncTokenSaved) {
         const confirmed = await showConfirm('当前已保存访问令牌，仍要重新登录？', {
             title: '账户登录',
             detail: '服务端会为该账户再签发一个访问令牌，本机随即改用新的那个；旧令牌不会因此失效，'
@@ -411,7 +365,7 @@ async function loginSyncAccount() {
         const result = await ipcRenderer.invoke('sync:login', {
             account: config.account,
             password,
-            // 令牌名与绑定设备：服务端日志据此认出改动来自哪一台设备
+
             tokenName: config.device ? `Esprin Nemo · ${config.device}` : 'Esprin Nemo'
         });
         if (!result || !result.ok) {
@@ -434,8 +388,6 @@ async function loginSyncAccount() {
     }
 }
 
-/* ---------------- 配置与界面 ---------------- */
-
 function readSyncConfigFromForm() {
     const field = (id) => {
         const el = document.getElementById(id);
@@ -443,7 +395,7 @@ function readSyncConfigFromForm() {
     };
 
     State.syncServer = normalizeSyncServerConfig({
-        // 保留上次同步的时刻与结果（表单里没有这两项）
+
         ...State.syncServer,
         url: field('setting-sync-url'),
         account: field('setting-sync-account'),
@@ -453,7 +405,6 @@ function readSyncConfigFromForm() {
     });
 }
 
-// 把配置落回界面（data_location.js 与 render.js 在切数据目录、打开设置页时也调用它）
 function syncSyncServerSettingsUI() {
     const urlInput = document.getElementById('setting-sync-url');
     if (!urlInput) return;
@@ -471,8 +422,7 @@ function syncSyncServerSettingsUI() {
     if (autoSelect) autoSelect.value = config.autoSync;
     syncSyncAutoCustomInputs(config);
 
-    // 关掉设置页再回来时输入框恢复为空 + 掩码显示（里面从不保留明文）
-    const tokenInput = document.getElementById('setting-sync-token');
+const tokenInput = document.getElementById('setting-sync-token');
     if (tokenInput) {
         tokenInput.value = '';
         tokenInput.type = 'password';
@@ -480,19 +430,17 @@ function syncSyncServerSettingsUI() {
     const tokenToggle = document.getElementById('btn-sync-token-toggle');
     if (tokenToggle) tokenToggle.innerHTML = '<span class="ms-icon xs">visibility</span>';
 
-    // 密码同理：只在登录那一次输入，从不留在界面上
-    const passwordInput = document.getElementById('setting-sync-password');
+const passwordInput = document.getElementById('setting-sync-password');
     if (passwordInput) passwordInput.value = '';
 
     applySyncTokenStatus({ hasToken: State.syncTokenSaved, strong: State.syncTokenStrong });
     applySyncEnabledState();
     refreshSyncTokenStatus();
     refreshSyncStatus();
-    // 先把可复用的 ID 领一批，之后新建条目就能用上被删掉的那一条腾出来的 ID
+
     refillRecycledIds().catch(() => {});
 }
 
-// 总开关状态落到界面上：配置区一起显隐
 function applySyncEnabledState() {
     const enabled = isSyncEnabled();
     document.querySelectorAll('#settings-view .sync-config-section').forEach((section) => {
@@ -504,16 +452,14 @@ function applySyncEnabledState() {
 
 function toggleSyncEnabled(enabled) {
     State.syncServer = normalizeSyncServerConfig({ ...State.syncServer, enabled });
-    // 必须直接落盘：主进程是按 config.json 判断要不要推送/拉取的
+
     saveConfig();
     applySyncEnabledState();
-    // 关掉之后不该再有定时同步
+
     syncSyncAutoSetting();
     showToast(enabled ? '已启用自建同步' : '已关闭自建同步');
 }
 
-/* 点「立即同步 / 首次接入」时如果还没打开开关，就顺手打开：
-   用户的意图已经很清楚，而不落盘的话主进程只会回一句「尚未启用」 */
 function ensureSyncEnabled() {
     if (isSyncEnabled()) return false;
     State.syncServer = normalizeSyncServerConfig({ ...State.syncServer, enabled: true });
@@ -530,8 +476,6 @@ function setSyncBusy(busy) {
     });
 }
 
-/* ---------------- 同步动作 ---------------- */
-
 async function testSyncConnection() {
     if (syncBusy) return;
     readSyncConfigFromForm();
@@ -541,7 +485,7 @@ async function testSyncConnection() {
     }
     ensureSyncEnabled();
     flushSyncConfigSave();
-    // 刚粘贴进来的令牌可能还没失焦提交，先落定再测试
+
     await commitSyncTokenFromForm();
 
     setSyncBusy(true);
@@ -584,8 +528,7 @@ async function runSyncNow() {
             return;
         }
 
-        // 本地文件被远端操作改过（或删过）时重新载入一次，界面与磁盘保持一致
-        if (result.written || result.deleted) {
+if (result.written || result.deleted) {
             adoptDataDir(DATA_DIR, { message: result.summary });
         }
         const resetNote = result.journalReset
@@ -602,9 +545,6 @@ async function runSyncNow() {
     }
 }
 
-/* 首次接入：服务端可能已经有数据，所以先把日志完整重放到本地（以服务端为准，包含删除），
-   再把「服务端从未见过」的本地文件推上去。服务端见过但已删除的文件不会被重新导入——
-   它出现在服务端的删除记录里。 */
 async function importFromServer() {
     if (syncBusy) return;
     readSyncConfigFromForm();
@@ -672,21 +612,17 @@ async function runSyncDiagnose() {
     }
 }
 
-// 服务端项目主页：地址固定在主进程（见 main.js 的 EXTERNAL_LINKS），这里只发起调用
 function openSyncServerRepo() {
     ipcRenderer.invoke('app:open-external', 'serverRepo').catch((err) => {
         console.error('打开服务端项目主页失败:', err);
     });
 }
 
-/* ---------------- 初始化 ---------------- */
-
 function initSyncServerSettings() {
     const urlInput = document.getElementById('setting-sync-url');
     if (!urlInput) return;
 
-    // 文本类字段：输入时只更新内存并稍后落盘，失焦/回车时立即落盘
-    ['setting-sync-url', 'setting-sync-account', 'setting-sync-device'].forEach((id) => {
+['setting-sync-url', 'setting-sync-account', 'setting-sync-device'].forEach((id) => {
         const el = document.getElementById(id);
         if (!el) return;
         el.oninput = () => {
@@ -700,8 +636,7 @@ function initSyncServerSettings() {
         };
     });
 
-    // 令牌：失焦或回车即提交给主进程保存（成功后输入框立即清空）
-    const tokenInput = document.getElementById('setting-sync-token');
+const tokenInput = document.getElementById('setting-sync-token');
     if (tokenInput) {
         tokenInput.onchange = () => { commitSyncTokenFromForm(); };
         tokenInput.onkeydown = (event) => {
@@ -748,8 +683,7 @@ function initSyncServerSettings() {
     const enabledToggle = document.getElementById('setting-sync-enabled');
     if (enabledToggle) enabledToggle.onchange = (event) => toggleSyncEnabled(event.target.checked);
 
-    // 账户登录：回车即提交（密码框不会把内容留在界面上，失败时原地再试）
-    const passwordInput = document.getElementById('setting-sync-password');
+const passwordInput = document.getElementById('setting-sync-password');
     if (passwordInput) {
         passwordInput.onkeydown = (event) => {
             if (event.key !== 'Enter') return;
@@ -779,27 +713,22 @@ function initSyncServerSettings() {
     const deviceIdCopyBtn = document.getElementById('btn-sync-device-id-copy');
     if (deviceIdCopyBtn) deviceIdCopyBtn.onclick = copySyncDeviceId;
 
-    /* 主进程重放完远端操作、改动了本地文件：重新载入一次，界面才会看到别的设备改过的内容。
-       先落盘再重载——被覆盖的可能是编辑器里正在改的那一篇 */
-    ipcRenderer.on('sync:applied', (event, payload) => {
+ipcRenderer.on('sync:applied', (event, payload) => {
         if (!payload) return;
         flushPendingSave();
         flushActiveAiChatSave();
         adoptDataDir(DATA_DIR, { message: payload.summary || `已从服务器同步 ${payload.count} 处改动` });
         refreshSyncStatus();
         refillRecycledIds().catch(() => {});
-        // 团队笔记的共享状态也写在服务端：同步下来的改动可能带来新的请求或撤销
+
         if (typeof refreshTeamNotesSoon === 'function') refreshTeamNotesSoon();
     });
 
-    /* 本地改动推上去之后：这一批里可能有删除（它的 ID 进了服务端的回收池），顺手补一批 */
-    ipcRenderer.on('sync:pushed', () => {
+ipcRenderer.on('sync:pushed', () => {
         refillRecycledIds().catch(() => {});
     });
 
-    /* 每轮同步结束：共享关系存在服务端，别人新发来的共享请求不会带来本地文件改动，
-       只有在这里对一次共享列表，新的请求才会浮现并提示（见 scripts/team_notes.js） */
-    ipcRenderer.on('sync:complete', () => {
+ipcRenderer.on('sync:complete', () => {
         if (typeof refreshTeamNotesSoon === 'function') refreshTeamNotesSoon();
     });
 

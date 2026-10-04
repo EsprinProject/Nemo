@@ -1,8 +1,3 @@
-/* 自绘下拉菜单：触发器 + 自绘弹出列表，替代 Chromium 原生 <select> 的下拉列表。
-   结构见 scripts/dropdown.js：.dropdown > (.dropdown-trigger + 原生 select.dropdown-source)，
-   弹出菜单 .dropdown-menu 挂在 <body> 下，用 fixed 定位（坐标由脚本按触发器位置计算），
-   因此不会被可滚动的设置面板裁切。 */
-
 .dropdown {
     position: relative;
     display: inline-flex;
@@ -10,8 +5,6 @@
     max-width: 100%;
 }
 
-/* 原生 select：留在原地充当数据源与事件源（选项、value、change 事件都照旧），
-   但不再绘制、不再参与布局，也不再抢焦点 */
 .dropdown-source {
     position: absolute;
     inset: 0;
@@ -22,8 +15,6 @@
     pointer-events: none;
 }
 
-/* 触发器沿用原生 select 的类名（如 .settings-select / .select-folder），
-   边框、内边距、圆角等既有样式自动生效，这里只补齐按钮与下拉的差异部分 */
 .dropdown-trigger {
     display: inline-flex;
     align-items: center;
@@ -54,7 +45,6 @@
     cursor: not-allowed;
 }
 
-/* 弹出列表：视觉沿用条目右键菜单（浮层）的一套 */
 .dropdown-menu {
     position: fixed;
     z-index: 300;
@@ -78,8 +68,6 @@
     to { opacity: 1; transform: none; }
 }
 
-/* 侧边栏顶部与空状态按钮的「新建」菜单：直接复用上面这套下拉菜单样式（结构见 scripts/context_menu.js），
-   不再单独维护一份菜单外观；条目少、文字短，因此只要一个固定宽度，不必跟着触发器宽度走 */
 .new-item-menu {
     min-width: 148px;
 }
@@ -117,7 +105,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-/* 选中标记：贴行尾；未选中时隐藏但仍占位，各行右边界保持一致 */
+
 .dropdown-check {
     flex-shrink: 0;
     color: var(--accent);
@@ -127,7 +115,6 @@
     visibility: visible;
 }
 
-/* optgroup 渲染为分组标题（字体列表用它把常用字体 / 中日韩字体分开） */
 .dropdown-group-label {
     padding: 6px 10px 2px;
     color: var(--text-muted);

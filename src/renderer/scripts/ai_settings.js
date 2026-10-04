@@ -1,17 +1,10 @@
-/* AI 助手设置面板：API 站点 / KEY / 模型，以及提问时附带的笔记范围。
-   API Key 不在 config.json 里，也不留在渲染进程：输入框只在提交时把值交给主进程
-   （由系统密钥链加密保存），界面只回显「有没有保存」与保管方式。 */
-
-// 输入过程中攒一下再落盘，避免每敲一个字符就写一次 config.json
 const AI_CONFIG_SAVE_DELAY = 400;
 let aiConfigSaveTimer = null;
 
-// 已配置的最低要求：有站点、有模型；本地服务（如 Ollama）可以不填 KEY
 function isAiConfigured() {
     return !!(State.ai && State.ai.baseUrl && State.ai.model);
 }
 
-// 总开关：关闭后界面中不再保留任何 AI 入口
 function isAiEnabled() {
     return !!State.ai && State.ai.enabled !== false;
 }
@@ -25,14 +18,12 @@ function scheduleAiConfigSave() {
 }
 
 function flushAiConfigSave() {
-    // 无条件写一次：拨动总开关、切换范围这类操作不会产生「待保存的输入」，
-    // 依赖防抖定时器会漏掉它们（saveConfig 内部会在内容没变时跳过，不会多写盘）
+
     clearTimeout(aiConfigSaveTimer);
     aiConfigSaveTimer = null;
     saveConfig();
 }
 
-// 面板状态行：tone 为 ok / error 时着色，缺省为普通说明文字
 function setAiStatus(text, tone) {
     const status = document.getElementById('ai-status');
     if (!status) return;
@@ -48,9 +39,6 @@ function describeAiConfigState() {
     return `已配置：${ai.model}${State.aiHasApiKey ? '' : '（未保存 API Key，适用于本地服务）'}`;
 }
 
-/* ---------------- API Key：只经主进程进出，渲染进程不留明文 ---------------- */
-
-// 主进程上报的保管方式：keychain（系统密钥链）/ encrypted（系统加密但非密钥链）/ plain（仅本机可读的文件）
 function aiKeyStorageKind(status) {
     if (!status || !status.hasKey) return '';
     if (status.strong) return 'keychain';
@@ -64,14 +52,13 @@ function describeAiKeyStorage() {
     return '已保存：当前系统不支持加密存储，仅按本机可读的文件权限保存。';
 }
 
-// 把主进程返回的密钥状态落到界面：输入框提示语、清除按钮与状态说明
 function applyAiKeyStatus(status) {
     State.aiHasApiKey = !!(status && status.hasKey);
     State.aiKeyStorage = aiKeyStorageKind(status);
 
     const keyInput = document.getElementById('setting-ai-apikey');
     if (keyInput) {
-        // 输入框里永远不放明文：已保存时留空，填写即表示「换成新的」
+
         keyInput.placeholder = State.aiHasApiKey ? '已保存；输入新的 API Key 即可替换' : 'sk-…';
     }
     const clearBtn = document.getElementById('btn-ai-key-clear');
@@ -81,7 +68,6 @@ function applyAiKeyStatus(status) {
     if (hint) hint.textContent = describeAiKeyStorage();
 }
 
-// 密钥状态只在主进程手里，设置页每次打开时同步一次
 async function refreshAiKeyStatus() {
     try {
         applyAiKeyStatus(await ipcRenderer.invoke('ai:key-status'));
@@ -90,7 +76,6 @@ async function refreshAiKeyStatus() {
     }
 }
 
-// 提交输入框里的新密钥：成功后立即清空输入框，界面只保留状态
 async function commitAiKeyFromForm() {
     const input = document.getElementById('setting-ai-apikey');
     if (!input) return false;
@@ -115,7 +100,6 @@ async function commitAiKeyFromForm() {
     }
 }
 
-// 清除已保存的密钥：需要确认，避免误点后丢失配置
 async function clearAiApiKey() {
     const confirmed = await showConfirm('清除已保存的 API Key？', {
         title: '清除 API Key',
@@ -140,8 +124,6 @@ async function clearAiApiKey() {
     }
 }
 
-// 把界面上的值读回 State（含规范化），并刷新依赖配置的界面元素。
-// API Key 不在此列：它由主进程保管，界面上的输入框只在提交时单独处理。
 function readAiConfigFromForm() {
     const field = (id) => {
         const el = document.getElementById(id);
@@ -158,7 +140,6 @@ function readAiConfigFromForm() {
     });
 }
 
-// 配置变化后统一刷新：状态行、面板标题里的模型名、面板里的附带范围下拉
 function refreshAiConfigViews() {
     setAiStatus(describeAiConfigState());
     updateAiPanelHeader();
@@ -177,8 +158,7 @@ function syncAiSettingsUI() {
     document.getElementById('setting-ai-system').value = ai.systemPrompt;
     document.getElementById('setting-ai-enabled').checked = ai.enabled;
 
-    // 关掉设置页再回来时输入框恢复为空 + 掩码显示（里面从不保留明文）
-    const keyInput = document.getElementById('setting-ai-apikey');
+const keyInput = document.getElementById('setting-ai-apikey');
     keyInput.value = '';
     keyInput.type = 'password';
     const keyToggle = document.getElementById('btn-ai-key-toggle');
@@ -188,32 +168,29 @@ function syncAiSettingsUI() {
 
     setAiStatus(describeAiConfigState());
     applyAiEnabledState();
-    // Agent 模式开关在对话面板里，但状态同样来自配置：切换数据目录等情况要跟着刷新
+
     syncAiAgentToggle();
 }
 
-// 总开关状态落到界面上：入口按钮、对话面板与设置项一起显隐
 function applyAiEnabledState() {
     const enabled = isAiEnabled();
 
     const entryBtn = document.getElementById('btn-ai-assistant');
     if (entryBtn) entryBtn.classList.toggle('hidden', !enabled);
 
-    // 只保留总开关，其余配置项在关闭时一并隐藏
-    document.querySelectorAll('#settings-view .ai-config-section').forEach((section) => {
+document.querySelectorAll('#settings-view .ai-config-section').forEach((section) => {
         section.classList.toggle('hidden', !enabled);
     });
     const disabledHint = document.getElementById('ai-disabled-hint');
     if (disabledHint) disabledHint.classList.toggle('hidden', enabled);
 
     if (!enabled) {
-        // 关闭时正在生成的回答不再有意义，直接停掉并收起面板
+
         if (State.aiStreaming) stopAiGeneration();
         if (State.aiPanelOpen) setAiPanelOpen(false);
     }
 }
 
-// 总开关切换
 function toggleAiEnabled(enabled) {
     State.ai = normalizeAiConfig({ ...State.ai, enabled });
     flushAiConfigSave();
@@ -221,7 +198,6 @@ function toggleAiEnabled(enabled) {
     showToast(enabled ? '已启用 AI 助手' : '已关闭 AI 助手');
 }
 
-// 地址快捷填入：把常用站点的地址一键写进输入框
 function applyAiBaseUrlPreset(url) {
     const input = document.getElementById('setting-ai-baseurl');
     if (!input || !url) return;
@@ -240,7 +216,6 @@ function setAiButtonBusy(id, busy) {
     btn.dataset.busy = busy ? '1' : '';
 }
 
-// 拉取模型列表：结果填充到模型输入框的候选里，仍允许手动填写
 async function fetchAiModels() {
     readAiConfigFromForm();
     if (!State.ai.baseUrl) {
@@ -248,7 +223,7 @@ async function fetchAiModels() {
         return;
     }
     flushAiConfigSave();
-    // 刚粘贴进来的 Key 可能还没失焦提交，先落定再发请求
+
     await commitAiKeyFromForm();
 
     setAiButtonBusy('btn-ai-models', true);
@@ -275,7 +250,6 @@ async function fetchAiModels() {
     }
 }
 
-// 连接测试：让站点真的回一句话，确认站点 / KEY / 模型三者都能用
 async function testAiConnection() {
     readAiConfigFromForm();
     if (!State.ai.baseUrl || !State.ai.model) {
@@ -283,7 +257,7 @@ async function testAiConnection() {
         return;
     }
     flushAiConfigSave();
-    // 同上：先把输入框里待保存的 Key 交给主进程，测试才会用上它
+
     await commitAiKeyFromForm();
 
     setAiButtonBusy('btn-ai-test', true);
@@ -309,9 +283,7 @@ function initAiSettings() {
     const baseUrl = document.getElementById('setting-ai-baseurl');
     if (!baseUrl) return;
 
-    // 文本类字段：输入时只更新内存并稍后落盘，失焦/回车时立即落盘
-    // （API Key 不在此列：输入框内容只在提交时交给主进程，不参与配置读写）
-    ['setting-ai-baseurl', 'setting-ai-model', 'setting-ai-system'].forEach((id) => {
+['setting-ai-baseurl', 'setting-ai-model', 'setting-ai-system'].forEach((id) => {
         const el = document.getElementById(id);
         if (!el) return;
         el.oninput = () => {
@@ -326,8 +298,7 @@ function initAiSettings() {
         };
     });
 
-    // API Key：失焦或回车即提交给主进程保存（成功后输入框立即清空）
-    const keyInput = document.getElementById('setting-ai-apikey');
+const keyInput = document.getElementById('setting-ai-apikey');
     if (keyInput) {
         keyInput.onchange = () => { commitAiKeyFromForm(); };
         keyInput.onkeydown = (event) => {
@@ -345,7 +316,7 @@ function initAiSettings() {
         scopeSelect.onchange = () => {
             readAiConfigFromForm();
             flushAiConfigSave();
-            // 设置里的默认范围同时作用于本次会话，避免"改了设置却没生效"的错觉
+
             State.aiScope = State.ai.scope;
             const panelSelect = document.getElementById('ai-scope-select');
             if (panelSelect) panelSelect.value = State.aiScope;
@@ -379,12 +350,10 @@ function initAiSettings() {
     const testBtn = document.getElementById('btn-ai-test');
     if (testBtn) testBtn.onclick = testAiConnection;
 
-    // 总开关：关闭后界面中不再保留任何 AI 入口
-    const enabledToggle = document.getElementById('setting-ai-enabled');
+const enabledToggle = document.getElementById('setting-ai-enabled');
     if (enabledToggle) enabledToggle.onchange = (event) => toggleAiEnabled(event.target.checked);
 
-    // 地址快捷填入：DeepSeek / Ollama 等常用站点一键填好地址
-    document.querySelectorAll('#settings-view .ai-quick-chip').forEach((chip) => {
+document.querySelectorAll('#settings-view .ai-quick-chip').forEach((chip) => {
         chip.onclick = () => applyAiBaseUrlPreset(chip.dataset.url || '');
     });
 

@@ -4,24 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Esprin Nemo</title>
-    <!-- 外观引导：明暗主题 / 主题风格 / 圆角尺度 / 主题色 / 应用名颜色 / 字体由主进程经命令行
-         参数注入，与主窗口、小本本共用同一套应用逻辑（window_appearance.js），首屏渲染前落定 -->
+
     <script src="./window_appearance.js"></script>
     <script>window.applyWindowAppearance(window.readWindowAppearanceFromArgs());</script>
     <link rel="stylesheet" href="../../node_modules/material-symbols/rounded.css">
-    <!-- 三个窗口共用同一套外观样式：tokens（颜色 / 字体 / 品牌字）→ window_shell（窗口骨架与标题栏）
-         → alom / magic_style（界面风格覆盖）→ radius（圆角尺度换算，按约定排在风格之后） -->
+
     <link rel="stylesheet" href="./styles/tokens.css">
     <link rel="stylesheet" href="./styles/window_shell.css">
     <link rel="stylesheet" href="./styles/alom.css">
     <link rel="stylesheet" href="./styles/magic_style.css">
     <link rel="stylesheet" href="./styles/radius.css">
-    <!-- 动效层：内容淡入上浮（与主窗口、小本本共用同一份，见 styles/motion.css） -->
+
     <link rel="stylesheet" href="./styles/motion.css">
     <style>
-        /* 高度必须由内容决定：window_shell.css 里 html/body 默认撑满窗口，
-           那样量到的高度恒等于当前窗口高度，窗口永远缩不回内容大小，
-           底部内边距会被裁掉、按钮就贴在窗口最下沿 */
+
         html, body {
             height: auto;
             overflow-x: hidden;
@@ -35,9 +31,7 @@
             background-color: var(--bg-body);
         }
 
-        /* 标题栏骨架（高度、拖动区域、背景与材质、应用名与窗口按钮）见 styles/window_shell.css，
-           这里只补弹窗特有的标题文字 */
-        .titlebar-title {
+.titlebar-title {
             flex: 1;
             min-width: 0;
             margin-left: 6px;
@@ -50,8 +44,7 @@
             text-overflow: ellipsis;
         }
 
-        /* 弹窗内容 */
-        .dialog-body {
+.dialog-body {
             display: flex;
             flex-direction: column;
             gap: 16px;
@@ -93,7 +86,7 @@
             word-break: break-word;
             user-select: text;
         }
-        /* 自动关闭倒计时（仅 timeoutMs 有值时出现）：到点由主进程替我们收掉窗口 */
+
         .dialog-countdown {
             font-size: 11.5px;
             color: var(--text-muted);
@@ -127,8 +120,7 @@
             opacity: 0.7;
         }
 
-        /* 候选项：输入框下方的可点选气泡（multiple 时支持多选） */
-        .dialog-choices {
+.dialog-choices {
             display: flex;
             flex-wrap: wrap;
             gap: 4px;
@@ -165,8 +157,7 @@
             opacity: 1;
         }
 
-        /* 可选勾选框（例如更新提醒里的「永不提醒」）：整行可点，点击文字也能切换 */
-        .dialog-checkbox {
+.dialog-checkbox {
             display: flex;
             align-items: flex-start;
             gap: 8px;
@@ -221,8 +212,7 @@
             opacity: 0.9;
         }
 
-        /* 显隐切换：与主窗口、小本本使用同一个约定 */
-        .hidden { display: none !important; }
+.hidden { display: none !important; }
     </style>
 </head>
 <body>
@@ -279,8 +269,7 @@
         const checkboxLabelEl = document.getElementById('dialog-checkbox-label');
         const actionsEl = document.getElementById('dialog-actions');
 
-        // 与主进程 dialog_window.js 的 MAX_HEIGHT 保持一致
-        const MAX_CONTENT_HEIGHT = 720;
+const MAX_CONTENT_HEIGHT = 720;
 
         let options = null;
         let buttonEls = [];
@@ -289,8 +278,7 @@
         let responded = false;
         let countdownTimer = null;
 
-        // 用纯文本填充，避免消息内容被当作 HTML 解析
-        function setText(el, text) {
+function setText(el, text) {
             el.textContent = text;
         }
 
@@ -307,8 +295,7 @@
             });
         }
 
-        // 候选项气泡：点击切换选中状态；单选模式（multiple === false）下互斥
-        function syncChoices() {
+function syncChoices() {
             choiceEls.forEach((el) => {
                 el.classList.toggle('selected', selectedChoices.has(el.dataset.value));
             });
@@ -351,9 +338,7 @@
             syncChoices();
         }
 
-        // 自动关闭倒计时：到点由主进程按「取消」收掉窗口（见 main/dialog_window.js 的 armTimeout）。
-        // 这里只把剩余秒数摆在明处，免得弹窗在用户眼前自己消失、看不出发生了什么
-        function startCountdown() {
+function startCountdown() {
             const total = Number(options && options.timeoutMs) || 0;
             if (total <= 0) return;
             const deadline = Date.now() + total;
@@ -383,7 +368,7 @@
 
             if (data.input) {
                 fieldEl.classList.remove('hidden');
-                // 口令输入（type: 'password'）同样走这个输入框，只是不显示明文
+
                 inputEl.type = data.input.type === 'password' ? 'password' : 'text';
                 inputEl.setAttribute('autocomplete', data.input.type === 'password' ? 'off' : 'on');
                 inputEl.value = data.input.value || '';
@@ -421,10 +406,7 @@
             });
         }
 
-        // 渲染进程无法直接改窗口大小，量好内容高度后交给主进程调整
-        // 内容超过窗口高度上限时改为滚动，避免文字被裁掉
-        // 取整时向上进位，避免亚像素高度把最后一行（按钮行）的底部裁掉
-        function requestResize() {
+function requestResize() {
             if (responded) return;
             const height = Math.ceil(document.body.getBoundingClientRect().height);
             document.documentElement.style.overflowY = height > MAX_CONTENT_HEIGHT ? 'auto' : 'hidden';
@@ -454,15 +436,14 @@
                 return;
             }
             if (event.key === 'Enter' && !event.shiftKey) {
-                // 焦点落在按钮/候选项上时交给它们自身的默认行为，避免与预期不一致
+
                 if (document.activeElement && document.activeElement.closest('.dialog-btn, .dialog-choice')) return;
                 event.preventDefault();
                 respond(options.defaultIndex, false);
             }
         });
 
-        // 输入框里的回车同样触发默认按钮（不依赖表单默认行为）
-        inputEl.addEventListener('keydown', (event) => {
+inputEl.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') event.preventDefault();
         });
 
@@ -484,7 +465,7 @@
             render(options);
             startCountdown();
             requestResize();
-            // 图标字体加载完成后高度可能变化，再量一次
+
             if (document.fonts && document.fonts.ready) {
                 document.fonts.ready.then(() => requestResize()).catch(() => {});
             }

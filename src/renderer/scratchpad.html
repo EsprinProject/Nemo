@@ -4,23 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>小本本</title>
-    <!-- 外观引导：明暗主题 / 主题风格 / 圆角尺度 / 主题色 / 字体由主进程经命令行参数注入，
-         与主窗口、弹窗共用同一套应用逻辑（window_appearance.js），首屏渲染前落定，避免闪烁 -->
+
     <script src="./window_appearance.js"></script>
     <script>window.applyWindowAppearance(window.readWindowAppearanceFromArgs());</script>
     <link rel="stylesheet" href="../../node_modules/material-symbols/rounded.css">
-    <!-- 三个窗口共用同一套外观样式：tokens（颜色 / 字体）→ window_shell（窗口骨架与标题栏）
-         → alom / magic_style（界面风格覆盖）→ radius（圆角尺度换算，按约定排在风格之后） -->
+
     <link rel="stylesheet" href="./styles/tokens.css">
     <link rel="stylesheet" href="./styles/window_shell.css">
     <link rel="stylesheet" href="./styles/alom.css">
     <link rel="stylesheet" href="./styles/magic_style.css">
     <link rel="stylesheet" href="./styles/radius.css">
-    <!-- 动效层：内容淡入上浮（与主窗口、弹窗共用同一份，见 styles/motion.css） -->
+
     <link rel="stylesheet" href="./styles/motion.css">
     <style>
         :root {
-            /* 小本本窗口较窄：窗口按钮比主窗口收窄一点，给标题输入留出空间 */
+
             --win-btn-width: 36px;
         }
 
@@ -31,12 +29,10 @@
             background-color: var(--bg-body);
         }
 
-        /* 标题栏骨架（高度、内边距、拖动区域、背景与材质）见 styles/window_shell.css，
-           这里只补小本本特有的部分：用图标代替应用名 */
-        .titlebar-icon {
+.titlebar-icon {
             font-size: 16px;
         }
-        /* 窗口名不再重复占位：原来显示“小本本”的位置就是标题输入框 */
+
         #note-title {
             flex: 1;
             min-width: 0;
@@ -50,7 +46,7 @@
             font-size: 12px;
             font-weight: 600;
             letter-spacing: 0.2px;
-            /* 按住标题拖动是搬窗口，因此不参与鼠标选中（键盘选中不受影响） */
+
             user-select: none;
             cursor: default;
             -webkit-app-region: no-drag;
@@ -68,9 +64,7 @@
             position: relative;
         }
 
-        /* 标题：已移入标题栏（见上方 #note-title） */
-
-        #note-input {
+#note-input {
             flex: 1;
             width: 100%;
             min-height: 0;
@@ -80,7 +74,7 @@
             resize: none;
             background-color: transparent;
             color: var(--text-primary);
-            /* 与小本本同步的是笔记正文：字体用文档字体，和主窗口编辑器保持一致 */
+
             font-family: var(--font-doc);
             font-size: 13px;
             line-height: 1.75;
@@ -90,9 +84,7 @@
             color: var(--text-muted);
         }
 
-        /* 状态栏：显示保存进度与关联状态；整条兼作拖动区域，方便搬动小窗口。
-           高度、分隔线与底色跟随主窗口编辑器底部的状态栏，两个窗口同一套观感 */
-        .note-status {
+.note-status {
             height: 28px;
             flex-shrink: 0;
             display: flex;
@@ -120,7 +112,7 @@
             align-items: center;
             gap: 6px;
         }
-        /* 关联状态：已关联某篇笔记时用强调色提示，未关联时保持灰色 */
+
         #note-binding {
             display: inline-flex;
             align-items: center;
@@ -130,8 +122,7 @@
         #note-binding.bound { color: var(--accent); }
         #note-binding .ms-icon { font-size: 12px; }
 
-        /* 笔记选择面板：覆盖在正文之上，不打断窗口本身的布局 */
-        .picker {
+.picker {
             position: absolute;
             inset: 0;
             display: flex;
@@ -252,8 +243,7 @@
         <div class="note-body">
             <textarea id="note-input" placeholder="随手记点什么…（Ctrl+S 保存）" spellcheck="false"></textarea>
 
-            <!-- 选择笔记：列出可选笔记，也可用当前内容新建一篇 -->
-            <div class="picker hidden" id="picker">
+<div class="picker hidden" id="picker">
                 <div class="picker-head">
                     <span class="ms-icon xs">search</span>
                     <input type="text" id="picker-search" placeholder="搜索笔记…" spellcheck="false">
@@ -286,20 +276,18 @@
         const pickerSearchEl = document.getElementById('picker-search');
         const pickerListEl = document.getElementById('picker-list');
 
-        // 输入停顿后再落盘，避免每个按键都写一次文件
-        const SAVE_DELAY = 400;
+const SAVE_DELAY = 400;
 
-        // 关联的笔记：空字符串表示内容还只属于小本本自己（尚未成为笔记）
-        let boundNoteId = '';
-        // 已落盘的内容快照：与界面完全一致时跳过保存
+let boundNoteId = '';
+
         let savedTitle = null;
         let savedContent = null;
         let saveTimer = null;
         let pickerNotes = [];
         let pickerOpen = false;
-        // 会话令牌：换笔记/取消关联后自增，用来丢弃还在路上的过期保存结果
+
         let sessionToken = 0;
-        // 首次载入完成前不落盘，避免用还没读出来的空内容覆盖缓存
+
         let ready = false;
 
         function setStatus(text, tone) {
@@ -311,8 +299,7 @@
             hintEl.textContent = `${inputEl.value.length} 字`;
         }
 
-        // 关联状态标记：让用户随时知道自己的内容是在小本本里，还是已经属于某篇笔记
-        function updateBinding() {
+function updateBinding() {
             const icon = document.createElement('span');
             icon.className = 'ms-icon xs';
             icon.textContent = boundNoteId ? 'link' : 'link_off';
@@ -339,8 +326,7 @@
             return titleEl.value !== savedTitle || inputEl.value !== savedContent;
         }
 
-        // 落盘：未关联时收进小本本自己的缓存，已关联时写回那篇笔记
-        async function saveNow() {
+async function saveNow() {
             clearSaveTimer();
             if (!ready || !hasChanges()) return true;
 
@@ -351,8 +337,7 @@
                 ? await ipcRenderer.invoke('scratchpad:save-note', { noteId: boundNoteId, title, content })
                 : await ipcRenderer.invoke('scratchpad:persist', { noteId: '', title, content });
 
-            // 等待期间已经换了笔记：这次保存的结果已经过期，不再回写界面状态
-            if (token !== sessionToken) return false;
+if (token !== sessionToken) return false;
 
             if (result && result.ok) {
                 savedTitle = title;
@@ -361,8 +346,7 @@
                 return true;
             }
 
-            // 关联的笔记已经不存在（被彻底删除/换了数据目录）：退回未关联，内容不丢
-            if (result && result.reason === 'missing') {
+if (result && result.reason === 'missing') {
                 boundNoteId = '';
                 await ipcRenderer.invoke('scratchpad:persist', { noteId: '', title, content });
                 savedTitle = title;
@@ -387,10 +371,9 @@
             saveTimer = setTimeout(saveNow, SAVE_DELAY);
         }
 
-        // 新建笔记：后台建好后小本本自动关联到它，继续在原地编辑
-        async function createAndBind() {
+async function createAndBind() {
             clearSaveTimer();
-            // 已关联笔记时有未落盘的改动，先写回原笔记，避免被这次新建顺手丢掉
+
             if (boundNoteId && hasChanges() && !(await saveNow())) return false;
 
             setStatus('正在新建笔记…', 'pending');
@@ -412,8 +395,7 @@
             return true;
         }
 
-        // 保存按钮 / Ctrl+S：未关联时新建笔记并关联，已关联时保存回那篇笔记
-        async function handleSave() {
+async function handleSave() {
             if (!ready) return;
             if (boundNoteId) {
                 await saveNow();
@@ -426,8 +408,7 @@
             await createAndBind();
         }
 
-        // 取消关联：先把改动写回笔记，再让小本本回到空白
-        async function unbind() {
+async function unbind() {
             if (!boundNoteId) return;
             if (!(await saveNow())) return;
 
@@ -449,8 +430,7 @@
             inputEl.focus();
         }
 
-        // 未关联且已有内容时，换成另一篇笔记前先确认，避免内容被直接丢掉
-        async function confirmDiscardUnsaved() {
+async function confirmDiscardUnsaved() {
             if (boundNoteId) return true;
             if (!titleEl.value.trim() && !inputEl.value.trim()) return true;
 
@@ -572,7 +552,7 @@
             } catch (err) {
                 console.error('读取笔记列表失败:', err);
             }
-            // 等待期间用户可能已经关掉了面板
+
             if (!pickerOpen) return;
 
             if (!result || !result.ok) {
@@ -588,8 +568,7 @@
             pickerEl.classList.add('hidden');
         }
 
-        // 用当前内容新建笔记（选择面板里的入口）
-        async function createFromPicker() {
+async function createFromPicker() {
             if (!titleEl.value.trim() && !inputEl.value.trim()) {
                 closePicker();
                 setStatus('小本本还是空的', 'pending');
@@ -599,13 +578,12 @@
             await createAndBind();
         }
 
-        // 打开一篇已有笔记：之后小本本里编辑的就是这篇笔记
-        async function openNote(noteId) {
+async function openNote(noteId) {
             if (noteId === boundNoteId) {
                 closePicker();
                 return;
             }
-            // 已关联的笔记先把改动落盘；未关联的内容则要先确认是否丢弃
+
             if (boundNoteId) {
                 if (!(await saveNow())) return;
             } else if (!(await confirmDiscardUnsaved())) {
@@ -639,19 +617,17 @@
         });
         titleEl.addEventListener('input', scheduleSave);
 
-        // 标题兼作拖动把手：按住标题拖动就是搬动窗口，单击才是编辑。
-        // 渲染进程无法直接移动窗口，因此按屏幕增量转给主进程搬运。
-        const TITLE_DRAG_THRESHOLD = 3;
+const TITLE_DRAG_THRESHOLD = 3;
         let titleDrag = null;
 
         titleEl.addEventListener('mousedown', (e) => {
             if (e.button !== 0) return;
-            // 先阻止默认行为：拖动过程中不会出现文本选区，也不会抢走光标
+
             e.preventDefault();
             titleDrag = {
                 startX: e.screenX,
                 startY: e.screenY,
-                // 单击而未拖动时，把光标放回按下前的位置（原本没聚焦则落到末尾）
+
                 caret: document.activeElement === titleEl ? titleEl.selectionStart : titleEl.value.length,
                 moved: false
             };
@@ -659,7 +635,7 @@
 
         window.addEventListener('mousemove', (e) => {
             if (!titleDrag) return;
-            // 左键已松开（例如鼠标在窗口外松开）时立即收尾，避免后续移动被误当成拖动
+
             if (!(e.buttons & 1)) {
                 titleDrag = null;
                 ipcRenderer.send('scratchpad:drag-end');
@@ -667,7 +643,7 @@
             }
             const dx = e.screenX - titleDrag.startX;
             const dy = e.screenY - titleDrag.startY;
-            // 微小滑动不算拖动，避免手抖把单击变成位移
+
             if (!titleDrag.moved && Math.abs(dx) < TITLE_DRAG_THRESHOLD && Math.abs(dy) < TITLE_DRAG_THRESHOLD) return;
 
             titleDrag.moved = true;
@@ -684,14 +660,12 @@
                 return;
             }
 
-            // 没有移动：这一次是单击，进入标题编辑
-            titleEl.focus();
+titleEl.focus();
             const caret = Math.max(0, Math.min(drag.caret, titleEl.value.length));
             titleEl.setSelectionRange(caret, caret);
         });
 
-        // 离开窗口（例如点开其它应用）时立刻落盘一次
-        window.addEventListener('blur', () => {
+window.addEventListener('blur', () => {
             if (titleDrag) {
                 titleDrag = null;
                 ipcRenderer.send('scratchpad:drag-end');
@@ -699,8 +673,7 @@
             saveNow();
         });
 
-        // 关窗兜底：异步写盘来不及等待，直接交给主进程接着完成
-        window.addEventListener('beforeunload', () => {
+window.addEventListener('beforeunload', () => {
             if (hasChanges() || boundNoteId) {
                 ipcRenderer.send('scratchpad:flush', {
                     noteId: boundNoteId,
@@ -719,13 +692,13 @@
             if (!(e.ctrlKey || e.metaKey)) return;
 
             const key = e.key.toLowerCase();
-            // Ctrl+S：保存（未关联时新建为笔记并关联）
+
             if (key === 's') {
                 e.preventDefault();
                 handleSave();
                 return;
             }
-            // Ctrl+O：打开笔记选择面板
+
             if (key === 'o') {
                 e.preventDefault();
                 openPicker();
@@ -742,13 +715,11 @@
         document.getElementById('note-min').onclick = () => ipcRenderer.invoke('window:minimize');
         document.getElementById('note-close').onclick = () => ipcRenderer.invoke('window:close');
 
-        // 主窗口内切换主题 / 主题风格 / 主题色 / 圆角尺度 / 字体时同步过来，两个窗口观感保持一致
-        ipcRenderer.on('scratchpad:appearance', (event, data) => {
+ipcRenderer.on('scratchpad:appearance', (event, data) => {
             window.applyWindowAppearance(data);
         });
 
-        // 载入上次的内容（关联的笔记优先取最新正文），光标默认落在正文末尾
-        (async () => {
+(async () => {
             let session = null;
             try {
                 session = await ipcRenderer.invoke('scratchpad:load');

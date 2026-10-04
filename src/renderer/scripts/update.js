@@ -1,29 +1,9 @@
-/* 应用更新设置：版本与项目地址展示、检查更新、下载进度与重启安装。
-   检查、下载、安装全部由主进程完成（见 src/main/updater.js），这里只做两件事：
-   把主进程上报的状态画到界面上，把用户的操作转成 IPC 调用。
-
-   状态有两个来源：
-   - 打开设置页时主动查询一次（update:get-info）
-   - 主进程在后台自动检查 / 下载 / 读取当前版本发布记录后推送的 update:state
-
-   「更新与版本」页里有两个开关：「自动检查并下载更新」（config.json 的 autoUpdate）与
-   「使用 gh-proxy 加速」（config.json 的 ghProxyEnabled）。两者都由这里写进配置，
-   主进程读到后分别决定要不要自动检查、检查更新与下载安装包时先走代理还是直连
-   （见 main/updater.js 的 githubUrls）。
-
-   两处说明文字（新版本、当前版本）都按 Markdown 渲染：marked.parse 会先转义 HTML，
-   发布页里的内容（包括 <script>）只会以纯文本形式出现，不会被当成 HTML 执行。
-
-   便携版没有更新功能（主进程不注册更新 IPC，也不做自动检查），因此这里整体跳过：
-   「系统」分类里的更新分区会被整块摘掉，也不绑定任何事件。 */
-
-// 主进程最近一次上报的更新状态（字段与 main/updater.js 的 snapshot 一一对应）
 let updateState = {
-    status: 'idle', // idle / checking / latest / available / downloading / downloaded / error
+    status: 'idle',
     currentVersion: '',
     repoUrl: '',
     autoUpdate: true,
-    // gh-proxy 加速（默认关闭）：开启后主进程检查更新与下载安装包都先走代理，失败回落直连
+
     ghProxyEnabled: false,
     canAutoInstall: false,
     packaged: false,
@@ -33,25 +13,23 @@ let updateState = {
     progress: null,
     lastCheckAt: 0,
     error: '',
-    // 当前版本的发布记录：{ version, notes, publishedAt, releaseUrl }
+
     currentRelease: null,
-    currentReleaseStatus: 'idle', // idle / loading / ready / missing / error
+    currentReleaseStatus: 'idle',
     currentReleaseError: '',
     update: null
 };
 
-// 后台自动下载只提示一次，避免每一轮进度都弹一条 toast
 let updateDownloadNotified = false;
-// 发现了新版本、但发布页里没有符合规则的安装包时只提示一次
+
 let updateNoAssetNotified = false;
-// 本次下载是否由界面按钮发起：自己点的不用再提示“正在后台下载”
+
 let updateManualDownload = false;
 
 function updateEl(id) {
     return document.getElementById(id);
 }
 
-// 显示类按钮的显隐统一走这里，避免散落的 style 操作
 function setUpdatesHidden(id, hidden) {
     const el = updateEl(id);
     if (el) el.classList.toggle('hidden', !!hidden);
@@ -77,7 +55,6 @@ function formatReleaseDate(value) {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-// 运行方式不再在界面上区分：能不能自动安装由按钮显隐与状态文字自己说明
 function describeUpdateStatus(state) {
     const version = state.update ? state.update.version : '';
     switch (state.status) {
@@ -86,7 +63,7 @@ function describeUpdateStatus(state) {
         case 'latest':
             return `已是最新版本（v${state.currentVersion}）`;
         case 'available':
-            // 发布页里没有符合命名规则的安装包（setup 段 + .exe）时只能去发布页手动下载
+
             return state.update && state.update.hasAsset === false
                 ? `发现新版本 v${version}，但发布页中没有符合命名规则的安装包（文件名需含 setup 且以 .exe 结尾），请用「打开发布页」手动下载`
                 : `发现新版本 v${version}，可立即下载`;
@@ -103,22 +80,18 @@ function describeUpdateStatus(state) {
     }
 }
 
-// 状态行的着色：出错的红色，其余成功态用强调色
 function updateStatusTone(state) {
     if (state.status === 'error') return 'error';
     if (state.status === 'latest' || state.status === 'downloaded') return 'ok';
     return '';
 }
 
-// 说明文字统一按 Markdown 渲染；没有正文时退回到一句纯文本说明。
-// innerHTML 在这里是安全的：marked.parse 会先做 HTML 转义，链接也会过协议白名单。
 function setReleaseNotesBody(el, notes, fallback) {
     if (!el) return;
     const text = String(notes || '').trim();
     el.innerHTML = marked.parse(text || fallback);
 }
 
-// 当前版本说明：版本号做成指向该版本发布页的链接，正文来自更新源上对应的 release
 function renderCurrentReleaseNotes() {
     const release = updateState.currentRelease;
     const label = updateState.currentVersion ? `v${updateState.currentVersion}` : '当前版本';
@@ -148,12 +121,12 @@ function renderCurrentReleaseNotes() {
             setReleaseNotesBody(body, release && release.notes, '该版本没有填写更新说明。');
             break;
         case 'loading':
-            // idle 也走这里：界面打开时主进程已经在读了，显示“读取中”比“尚未读取”更贴切
+
             if (dateEl) dateEl.textContent = '';
             setReleaseNotesBody(body, '', '正在向更新源读取当前版本的发布说明…');
             break;
         case 'missing':
-            // 本地构建（bun start / 未发布的版本）在更新源上不会有对应的发布记录
+
             if (dateEl) dateEl.textContent = '';
             setReleaseNotesBody(body, '', `更新源上没有 ${label} 的发布记录：可能是本地运行的未发布版本。`);
             break;
@@ -168,7 +141,7 @@ function renderCurrentReleaseNotes() {
 }
 
 function renderUpdateUI() {
-    // 便携版没有更新功能：更新分区已整块摘掉，不再改动任何界面
+
     if (IS_PORTABLE_RUN) return;
 
     const toggle = updateEl('setting-auto-update');
@@ -180,8 +153,7 @@ function renderUpdateUI() {
     const versionEl = updateEl('update-current-version');
     if (versionEl) versionEl.textContent = updateState.currentVersion ? `v${updateState.currentVersion}` : '未知版本';
 
-    // 版本号下面那行显示项目地址（原来这里是「更新源」）
-    const repoEl = updateEl('update-repo-url');
+const repoEl = updateEl('update-repo-url');
     if (repoEl) repoEl.textContent = updateState.repoUrl ? `项目地址：${updateState.repoUrl}` : '正在读取项目地址…';
 
     const statusEl = updateEl('update-status');
@@ -195,8 +167,7 @@ function renderUpdateUI() {
     const downloaded = !!updateState.downloaded;
     const canInstall = downloaded && updateState.canAutoInstall;
 
-    // 按钮显隐：同一时刻最多出现一个主动作
-    setUpdatesHidden('btn-update-download', !(updateState.status === 'available' && update && update.hasAsset && !updateState.downloading));
+setUpdatesHidden('btn-update-download', !(updateState.status === 'available' && update && update.hasAsset && !updateState.downloading));
     setUpdatesHidden('btn-update-install', !canInstall);
     setUpdatesHidden('btn-update-open-file', !(downloaded && !updateState.canAutoInstall));
     setUpdatesHidden('btn-update-cancel', !updateState.downloading);
@@ -204,8 +175,7 @@ function renderUpdateUI() {
     setUpdatesDisabled('btn-update-check', busy);
     setUpdatesDisabled('btn-update-download', busy);
 
-    // 进度条：下载中显示实时进度，下载完成后保留 100% 的完成态
-    const progress = updateState.progress;
+const progress = updateState.progress;
     const showProgress = updateState.downloading || (downloaded && !!progress);
     setUpdatesHidden('update-progress', !showProgress);
     if (showProgress) {
@@ -228,8 +198,7 @@ function renderUpdateUI() {
         if (percentEl) percentEl.textContent = downloaded ? '已完成' : `${percent}%`;
     }
 
-    // 新版本说明：只在真的有新版本可看时展开，正文按 Markdown 渲染
-    const showNotes = !!update && ['available', 'downloading', 'downloaded'].includes(updateState.status);
+const showNotes = !!update && ['available', 'downloading', 'downloaded'].includes(updateState.status);
     setUpdatesHidden('update-notes-section', !showNotes);
     if (showNotes) {
         const versionText = updateEl('update-notes-version');
@@ -239,26 +208,23 @@ function renderUpdateUI() {
         setReleaseNotesBody(updateEl('update-notes-body'), update.notes, '该版本没有填写更新说明。');
     }
 
-    // 当前版本说明：内容取自更新源上该版本的发布记录，没读到就显示对应的状态说明
-    renderCurrentReleaseNotes();
+renderCurrentReleaseNotes();
 }
 
-// 主进程状态里有缺项时用当前值兜底，保证渲染函数拿到的字段齐全
 function adoptUpdateState(payload) {
     if (!payload || typeof payload !== 'object') return;
     updateState = { ...updateState, ...payload };
-    // 自动更新开关以配置为准，主进程读到的就是 config.json 里的值
+
     State.autoUpdate = updateState.autoUpdate !== false;
     State.ghProxyEnabled = updateState.ghProxyEnabled === true;
     renderUpdateUI();
 }
 
-// 打开设置页 / 切换数据目录后调用：开关状态跟随配置，其余沿用最近一次状态
 function syncUpdateSettingsUI() {
     if (IS_PORTABLE_RUN) return;
     const toggle = updateEl('setting-auto-update');
     if (toggle) toggle.checked = State.autoUpdate !== false;
-    // gh-proxy 加速开关以 State 为准（便携版不会走到这里，因为整个更新分类已被移除）
+
     const proxyToggle = updateEl('setting-gh-proxy');
     if (proxyToggle) proxyToggle.checked = State.ghProxyEnabled === true;
     renderUpdateUI();
@@ -321,7 +287,6 @@ async function cancelUpdateDownload() {
     }
 }
 
-// 便携版 / 开发运行下没有可自动安装的目标，只能打开安装包让用户手动升级
 async function openDownloadedPackage() {
     try {
         await ipcRenderer.invoke('update:open-file');
@@ -344,8 +309,7 @@ async function installUpdate() {
     });
     if (!confirmed) return;
 
-    // 升级过程会结束进程：先把待保存的编辑落盘，避免丢内容
-    flushPendingSave();
+flushPendingSave();
 
     try {
         const result = await ipcRenderer.invoke('update:install');
@@ -364,14 +328,12 @@ function openUpdatePage() {
     });
 }
 
-// 项目地址：交给主进程用系统浏览器打开
 function openProjectPage() {
     ipcRenderer.invoke('update:open-repo').catch((err) => {
         console.error('打开项目主页失败:', err);
     });
 }
 
-// 主进程推送的状态：后台自动下载开始时提示一次，下载完成后提示一次
 function handleUpdateStatePush(payload) {
     const previousStatus = updateState.status;
     adoptUpdateState(payload);
@@ -381,7 +343,7 @@ function handleUpdateStatePush(payload) {
         const version = updateState.update ? updateState.update.version : '';
         showToast(`正在后台下载更新 ${version ? `v${version}` : ''}`.trim());
     }
-    // 有新版但发布页没有可自动安装的包：提示一次，让用户知道要去发布页手动下载
+
     if (updateState.status === 'available' && updateState.update && updateState.update.hasAsset === false && !updateNoAssetNotified) {
         updateNoAssetNotified = true;
         showToast(`发现新版本 v${updateState.update.version}，发布页里没有可用的安装包，请在设置中手动下载`);
@@ -396,13 +358,12 @@ function handleUpdateStatePush(payload) {
     }
 }
 
-// 便携版：把「系统」分类里的更新与版本分区（自动更新 / 新版本说明 / 版本信息 / 当前版本说明）从界面上摘掉
 function removeUpdateSettingsUI() {
     document.querySelectorAll('#settings-view .settings-update-block').forEach((block) => block.remove());
 }
 
 function initUpdateSettings() {
-    // 便携版整体移除更新功能：设置项与全部事件都不启用
+
     if (IS_PORTABLE_RUN) {
         removeUpdateSettingsUI();
         return;
@@ -420,8 +381,7 @@ function initUpdateSettings() {
         };
     }
 
-    // gh-proxy 加速：与自动更新同一套做法，渲染进程写配置，主进程每次检查 / 下载时现读
-    const proxyToggle = updateEl('setting-gh-proxy');
+const proxyToggle = updateEl('setting-gh-proxy');
     if (proxyToggle) {
         proxyToggle.onchange = (e) => {
             State.ghProxyEnabled = !!e.target.checked;
@@ -447,8 +407,7 @@ function initUpdateSettings() {
 
     ipcRenderer.on('update:state', (event, payload) => handleUpdateStatePush(payload));
 
-    // 「永不提醒」：勾选后关闭更新弹窗，主进程会把配置里的自动更新关掉，这里同步开关并说明一次
-    ipcRenderer.on('update:auto-disabled', () => {
+ipcRenderer.on('update:auto-disabled', () => {
         State.autoUpdate = false;
         updateState = { ...updateState, autoUpdate: false };
         syncUpdateSettingsUI();

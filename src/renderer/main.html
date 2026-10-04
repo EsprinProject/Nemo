@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Esprin Nemo</title>
-    <!-- 外观引导：三个窗口共用同一套外观换算逻辑（boot.js 读取配置后调用它） -->
+
     <script src="./window_appearance.js"></script>
     <script src="./boot.js"></script>
     <link rel="stylesheet" href="../../node_modules/material-symbols/rounded.css">
@@ -13,50 +13,46 @@
     <link rel="stylesheet" href="./styles/sidebar.css">
     <link rel="stylesheet" href="./styles/editor.css">
     <link rel="stylesheet" href="./styles/overlays.css">
-    <!-- 自绘下拉菜单：替代 Chromium 原生 select 的弹出列表 -->
+
     <link rel="stylesheet" href="./styles/dropdown.css">
     <link rel="stylesheet" href="./styles/settings.css">
-    <link rel="stylesheet" href="./styles/ai.css">
-    <!-- 自建同步：设置页「数据与存储」里的服务器与同步面板 -->
+    <link rel="stylesheet" href="./styles/right_sidebar.css">
+
     <link rel="stylesheet" href="./styles/sync.css">
-    <!-- 随口记：语音转文本（编辑器顶栏入口与聆听反馈条） -->
+
     <link rel="stylesheet" href="./styles/voice.css">
-    <!-- 秘密本：加密条目的锁面板与设置页「秘密本」列表 -->
+
     <link rel="stylesheet" href="./styles/secret.css">
-    <!-- Alom 风格：仅当 <html data-theme-style="alom"> 时生效 -->
+
     <link rel="stylesheet" href="./styles/alom.css">
-    <!-- 魔幻风格：仅当 <html data-theme-style="magic"> 时生效 -->
+
     <link rel="stylesheet" href="./styles/magic_style.css">
-    <!-- 圆角尺度：按设置中的选择把 --radius-* 令牌换算成最终圆角，需排在其它风格之后 -->
+
     <link rel="stylesheet" href="./styles/radius.css">
-    <!-- 界面布局：现代布局（<html class="modern-layout">）下去掉标题栏，标签页移到工作区顶部，入口悬浮到右上角 -->
+
     <link rel="stylesheet" href="./styles/mode.css">
-    <!-- 动效层：进场动画与换肤交叉淡入。需排在所有组件样式之后：它只补动效，
-         静默状态的外观仍由上面的各文件决定（令牌见 tokens.css 的 --motion-* / --ease-*） -->
+
     <link rel="stylesheet" href="./styles/motion.css">
 </head>
 <body>
     <div class="app-container">
-        <!-- 1. Top Titlebar: Clean & Tab-oriented -->
+
         <header class="titlebar" id="app-titlebar">
-            <!-- App Name Brand（点击可关闭全部标签页回到首页） -->
+
             <div class="titlebar-brand" id="app-brand" title="回到首页">EsprinNemo</div>
 
-            <!-- Tabs container stretching to the new note button；现代布局的标签页在工作区顶部
-                 （#workspace-tabs），这一个只在经典布局下渲染，见 scripts/render.js 的 renderTabs -->
-            <div class="titlebar-tabs" id="titlebar-tabs"></div>
+<div class="titlebar-tabs" id="titlebar-tabs"></div>
 
-            <!-- Action buttons in titlebar -->
-            <div class="titlebar-actions">
-                <!-- AI 助手：右侧问答面板（需先在设置中配置站点与模型） -->
+<div class="titlebar-actions">
+
                 <button class="btn-action-icon" id="btn-ai-assistant" title="AI 助手">
                     <span class="ms-icon sm">chat_bubble</span>
                 </button>
-                <!-- 小本本：屏幕右下角的便利贴小窗口（始终置顶） -->
+
                 <button class="btn-action-icon" id="btn-scratchpad" title="小本本">
                     <span class="ms-icon sm">sticky_note_2</span>
                 </button>
-                <!-- 桌面便利贴：把笔记或待办贴到桌面上（见 scripts/sticky_notes.js） -->
+
                 <button class="btn-action-icon" id="btn-sticky-notes" title="桌面便利贴">
                     <span class="ms-icon sm">keep</span>
                 </button>
@@ -68,8 +64,7 @@
                 </button>
             </div>
 
-            <!-- Window controls for frameless electron window -->
-            <div class="window-controls">
+<div class="window-controls">
                 <button class="win-btn" id="win-min" title="最小化">
                     <span class="ms-icon xs">remove</span>
                 </button>
@@ -82,34 +77,22 @@
             </div>
         </header>
 
-        <!-- 2. Main Content Body -->
-        <div class="app-body">
-            <!-- Left Sidebar Navigation -->
+<div class="app-body">
+            <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
             <aside class="sidebar" id="app-sidebar">
-                <!-- Top New Button in Sidebar：经典布局下点击后在按钮下方展开「新建笔记 / 新建待办 / 导入文件」菜单。
-                     现代布局下应用名（.sidebar-brand）与这个按钮并排一行：名字在左、按钮靠最右，
-                     按钮收成正方形、不再弹菜单——平时仍是原来那副样子（主题色底 + 加号），
-                     悬停时底色褪成中性浅灰、加号换成「新建文档」的图标，同时从旁边「复制」出第二份
-                     （展开态向左滑出、收起态向下滑出）：一份新建笔记、一份新建待办
-                     （见 styles/mode.css 的「新建的两份」与 scripts/events.js）。 -->
+
                 <div class="sidebar-action-wrap">
-                    <!-- 应用名：仅现代布局显示（标题栏在该布局下被移除），纯展示、不可点击，
-                         与「新建」按钮同一行；侧边栏收起时连同按钮一起收成加号 -->
+
                     <div class="sidebar-brand" id="sidebar-brand">EsprinNemo</div>
-                    <!-- 两份「新建」的外包装：现代布局里由它撑住两份之间的间隔，
-                         鼠标从本体移到副本上时不会半路掉出悬停区（见 styles/mode.css） -->
+
                     <div class="sidebar-new-split" id="sidebar-new-split">
-                        <!-- 副本（新建待办）：平时在排版里不占位，悬停时才滑出来。
-                             现代布局下排在本体左边（展开态）或下边（收起态），位置由 order 决定；
-                             经典布局里这一枚不排出来（样式见 styles/sidebar.css）。
-                             图标沿用侧边栏里「待办」那一枚，一眼能认出它管的是待办 -->
+
                         <button class="btn-sidebar-new btn-sidebar-new-extra" id="btn-new-todo"
                                 title="新建待办 (Ctrl+Shift+N)">
                             <span class="ms-icon sm">check_box</span>
                         </button>
-                        <!-- 本体（新建笔记）：停在原处不动——鼠标停在哪个按钮上，点下去的就还是哪一个。
-                             两枚图标叠在正中：加号是平时的样子，悬停时淡出、换成「新建文档」那一枚
-                             （后者只在现代布局排出来，见 styles/sidebar.css 与 styles/mode.css） -->
+
                         <button class="btn-sidebar-new" id="btn-new-note" title="新建笔记 (Ctrl+N)">
                             <span class="ms-icon sm btn-new-note-icon">add</span>
                             <span class="ms-icon sm btn-new-note-icon-doc">note_add</span>
@@ -118,8 +101,7 @@
                     </div>
                 </div>
 
-                <!-- Main Filters：笔记 / 待办各自一个入口，已置顶与废纸篓两类混排 -->
-                <div class="nav-section nav-section-main">
+<div class="nav-section nav-section-main">
                     <div class="nav-item active" data-filter="all" title="全部笔记">
                         <div class="nav-item-left">
                             <span class="ms-icon sm">description</span>
@@ -150,8 +132,7 @@
                     </div>
                 </div>
 
-                <!-- Folders -->
-                <div class="nav-section nav-section-folders">
+<div class="nav-section nav-section-folders">
                     <div class="nav-section-title">
                         <span>文件夹</span>
                         <button id="btn-add-folder" title="新建文件夹">
@@ -161,42 +142,34 @@
                     <div class="folder-list" id="sidebar-folder-list"></div>
                 </div>
 
-                <!-- Tags -->
-                <div class="nav-section nav-section-tags">
+<div class="nav-section nav-section-tags">
                     <div class="nav-section-title">
                         <span>标签过滤</span>
                     </div>
                     <div class="tag-list" id="sidebar-tag-list"></div>
                 </div>
 
-                <!-- Footer Status & Trash Management
-                     概览文字在左，图标组贴右缘：清空废纸篓 / 导入文件排在设置左侧（靠 DOM 顺序），
-                     推手是概览文字的 margin-right: auto（见 styles/sidebar.css）；
-                     收起态下本区域改为纵向排布，图标自上而下同序 -->
-                <div class="sidebar-bottom">
+<div class="sidebar-bottom">
                     <span id="sidebar-stat" class="nav-text">共 0 篇笔记</span>
                     <button class="btn-clear-trash hidden" id="btn-empty-trash" title="彻底清空废纸篓">
                         <span class="ms-icon xs">delete_forever</span>
                     </button>
-                    <!-- 导入文件：原先挂在「新建」菜单里，现代布局下菜单没了，这里独立成一枚按钮，
-                         固定排在设置按钮左边（清空废纸篓之后、设置之前）。
-                         进废纸篓视图时藏起来——那里不该再往里导东西（见 scripts/render.js 的 renderCounts） -->
+
                     <button class="btn-sidebar-bottom" id="btn-import-note" title="导入文件为笔记">
                         <span class="ms-icon xs">file_upload</span>
                     </button>
-                    <!-- 设置入口（两种状态下均可见） -->
+
                     <button class="btn-sidebar-bottom" id="btn-open-settings" title="设置">
                         <span class="ms-icon xs">settings</span>
                     </button>
-                    <!-- 收起/展开侧边栏 -->
+
                     <button class="btn-sidebar-bottom" id="btn-toggle-sidebar" title="收起侧边栏">
                         <span class="ms-icon xs" id="sidebar-toggle-icon">keyboard_double_arrow_left</span>
                     </button>
                 </div>
             </aside>
 
-            <!-- Middle Notes List -->
-            <section class="notes-panel">
+<section class="notes-panel">
                 <div class="notes-panel-header">
                     <div class="search-box">
                         <span class="ms-icon sm" style="color: var(--text-muted);">search</span>
@@ -216,43 +189,26 @@
                 <div class="notes-list" id="notes-list-box"></div>
             </section>
 
-            <!-- Right Workspace / Editor -->
-            <main class="workspace" id="workspace-box">
-                <!-- 现代布局的标签页：经典布局里标签页归标题栏所有，这里不显示（见 styles/mode.css）。
-                     工作区这一列从窗口上沿开始，因此这一条标签页正好落在笔记列表搜索栏那一行；
-                     两个容器同时存在，scripts/render.js 只往当前布局的那一个里渲染，
-                     没有打开任何标签时整条收起（:empty） -->
+<main class="workspace" id="workspace-box">
+
                 <div class="workspace-tabs" id="workspace-tabs"></div>
 
-                <!-- 现代布局的「返回」只有这一枚，挂在标签页最左侧（只留图标，见 styles/mode.css）：
-                     它自己一层盖在标签页左端让出来的一格上，编辑器打开时滑入、关掉时滑出，
-                     与侧边栏收起与否无关（标签栏被「禁用标签页」收起时它落在编辑器顶栏同一格上） -->
-                <button class="tabs-back" id="btn-tabs-back" title="返回笔记列表">
-                    <!-- 两枚图标随标签页走，同时只显示一枚（见 styles/mode.css 的「返回」那一段）：
-                         标签页开着时这枚就钉在标签栏最左端，标签栏已在手边，点它是一步「回到首页」，
-                         于是用首页图标；「禁用标签页」时它落在编辑器顶栏那一格上，仍用原来的返回箭头 -->
+<button class="tabs-back" id="btn-tabs-back" title="返回笔记列表">
+
                     <span class="ms-icon sm tabs-back-icon-back">arrow_back</span>
                     <span class="ms-icon sm tabs-back-icon-home">home</span>
                 </button>
 
-                <!-- Empty Placeholder Screen -->
-                <div class="empty-placeholder" id="empty-state">
-                    <!-- 现代布局的窗口拖动区：一块不可见的空白，铺在下面的图标 / 文字 / 按钮之下，
-                         并整列避开右上角的悬浮按钮（只有该布局显示，见 styles/mode.css） -->
+<div class="empty-placeholder" id="empty-state">
+
                     <div class="empty-drag-surface" aria-hidden="true"></div>
                     <span class="ms-icon">edit_note</span>
                     <p>选择一篇笔记或一项待办，或新建</p>
                     <button class="btn-new-note" id="btn-empty-new">新建</button>
                 </div>
 
-                <!-- Workspace Topbar。编辑器整块（顶栏 / 工具栏 / 标题 / 正文 / 状态栏）首屏先按住不排：
-                     启动时一个标签也没开，这些东西本就该是收起的，等脚本渲染出当前条目再放开
-                     （见 scripts/render.js 的 renderWorkspace）。不先按住的话，首屏在脚本起来之前
-                     它们是排着的：工作区此刻只看得见空状态，而浮在空状态之上的标签栏「返回」
-                     （z-index 12，无标签时那一行自己收起）会先冒出一枚「返回首页」。 -->
-                <div class="editor-topbar hidden" id="editor-topbar">
-                    <!-- 顶栏里不再有「返回」：退回笔记列表统一走标签栏最左端那一枚
-                         （#btn-tabs-back，见上），侧边栏收起时也不换地方（见 styles/mode.css） -->
+<div class="editor-topbar hidden" id="editor-topbar">
+
                     <div class="editor-meta">
                         <select class="select-folder" id="editor-folder-select"></select>
                         <div class="note-tags-container" id="editor-tags-container"></div>
@@ -261,14 +217,8 @@
                         </button>
                     </div>
 
-                    <!-- 视图切换与待办完成开关：现代布局下这一行本身就是拖动窗口的留白，
-                         按钮与分段控件单独抠回 no-drag（见 styles/mode.css）。
-                         置顶 / 导出 / 移入废纸篓（废纸篓里的恢复 / 彻底删除）都在条目右键菜单里，
-                         顶栏不再各留一个按钮（见 scripts/context_menu.js） -->
-                    <div class="editor-actions">
-                        <!-- 随口记：语音转文本（识别结果插到光标处）。默认只用本机离线识别，
-                             组件状态与联网兜底开关在「设置 → 编辑器 → 随口记」，
-                             显隐与起停见 scripts/voice_notes.js -->
+<div class="editor-actions">
+
                         <button class="btn-action-icon" id="btn-voice-dictate"
                                 title="随口记：语音转文本 (Ctrl+Shift+M)" aria-pressed="false">
                             <span class="ms-icon sm">mic</span>
@@ -280,16 +230,13 @@
                             <button class="view-btn" id="btn-mode-preview">预览</button>
                         </div>
 
-                        <!-- 待办：标记完成 / 取消完成（仅待办条目可见） -->
-                        <button class="btn-action-icon hidden" id="btn-todo-done" title="标记为已完成">
+<button class="btn-action-icon hidden" id="btn-todo-done" title="标记为已完成">
                             <span class="ms-icon sm">radio_button_unchecked</span>
                         </button>
                     </div>
                 </div>
 
-                <!-- 随口记的聆听反馈条：只在聆听过程中出现（识别结果直接进正文，这里只显示状态、
-                     实时片段与语言）。安静态整条不排，编辑器顶栏以下不留空档 -->
-                <div class="voice-bar hidden" id="voice-bar">
+<div class="voice-bar hidden" id="voice-bar">
                     <span class="voice-pulse" aria-hidden="true"><i></i><i></i><i></i></span>
                     <span class="voice-state" id="voice-state"></span>
                     <span class="voice-interim" id="voice-interim"></span>
@@ -305,7 +252,9 @@
                     </button>
                 </div>
 
-                <!-- Formatting Toolbar -->
+                <div class="editor-body">
+                <div class="editor-main">
+
                 <div class="editor-toolbar hidden" id="editor-toolbar">
                     <button class="fmt-btn" data-fmt="bold" title="加粗">B</button>
                     <button class="fmt-btn" data-fmt="italic" style="font-style: italic;" title="斜体">I</button>
@@ -322,15 +271,14 @@
                     <button class="fmt-btn" data-fmt="hr" title="分割线"><span class="ms-icon sm">horizontal_rule</span></button>
                     <div class="fmt-divider"></div>
                     <button class="fmt-btn" id="btn-insert-file" title="插入文件或图片"><span class="ms-icon sm">attach_file</span></button>
+                    <button class="fmt-btn" id="btn-file-manager" title="文件管理器"><span class="ms-icon sm">folder_open</span></button>
                 </div>
 
-                <!-- Note Title Input -->
-                <div class="editor-title-area hidden">
+<div class="editor-title-area hidden">
                     <input type="text" class="editor-title-input" id="input-note-title" placeholder="无标题笔记...">
                 </div>
 
-                <!-- 编辑器与预览 -->
-                <div class="editor-content-area hidden">
+<div class="editor-content-area hidden">
                     <div class="editor-pane" id="editor-pane">
                         <textarea class="editor-textarea" id="textarea-note-content" placeholder="输入 Markdown 内容..." spellcheck="false"></textarea>
                     </div>
@@ -338,16 +286,37 @@
                         <div class="markdown-body" id="preview-content"></div>
                     </div>
 
-                    <!-- 加密条目的锁面板：盖在编辑区上，解锁前不展示正文（见 scripts/editor.js 的 applySecretLockUI） -->
-                    <div class="secret-lock-overlay hidden" id="secret-lock-overlay">
+<div class="secret-lock-overlay hidden" id="secret-lock-overlay">
                         <span class="ms-icon secret-lock-icon">lock</span>
                         <div class="secret-lock-title" id="secret-lock-title">该文档的正文已加密</div>
                         <div class="secret-lock-desc">正文以 AES-256-GCM 加密保存，输入密码后可在本次运行中查看与编辑。</div>
                         <button class="settings-btn primary" id="btn-secret-unlock">输入密码</button>
                     </div>
                 </div>
+                </div>
 
-                <!-- Footer Status -->
+<aside class="fm-panel hidden fm-collapsed" id="fm-panel">
+                <div class="fm-panel-header">
+                    <span class="ms-icon sm">folder_open</span>
+                    <span class="fm-panel-title">文件管理</span>
+                    <span class="fm-file-count" id="fm-file-count">0 个文件</span>
+                    <div class="fm-panel-spacer"></div>
+                    <button class="btn-action-icon" id="btn-fm-explorer" title="在资源管理器中打开">
+                        <span class="ms-icon sm">open_in_new</span>
+                    </button>
+                    <button class="btn-action-icon" id="btn-fm-close" title="关闭">
+                        <span class="ms-icon sm">close</span>
+                    </button>
+                </div>
+                <div class="fm-file-list-wrap">
+                    <div class="fm-empty" id="fm-empty">
+                        <span class="ms-icon">note_stack_add</span>
+                        <p>暂无附件</p>
+                    </div>
+                    <div class="fm-file-list" id="fm-file-list"></div>
+                </div>
+            </aside>
+            </div>
                 <footer class="editor-footer hidden">
                     <div class="editor-footer-left">
                         <span id="save-status">就绪</span>
@@ -358,12 +327,11 @@
                         <span id="stat-word-count">字数: 0</span>
                     </div>
                 </footer>
+
             </main>
 
-            <!-- 4. AI 助手：贴在工作区右侧的问答面板（标题栏按钮开关） -->
-            <aside class="ai-panel hidden" id="ai-panel">
-                <!-- 现代布局的窗口拖动区：踮在面板顶栏上方的空白（只有该布局显示，见 styles/mode.css），
-                     高度与悬浮按钮组一致，同时也把面板顶栏让到按钮下方 -->
+<aside class="ai-panel hidden" id="ai-panel">
+
                 <div class="ai-panel-drag-strip" aria-hidden="true"></div>
                 <div class="ai-panel-header">
                     <span class="ms-icon sm">chat_bubble</span>
@@ -384,8 +352,7 @@
                     </button>
                 </div>
 
-                <!-- 对话记录：盖在消息区上方的第二层视图（切换 / 新建 / 重命名 / 删除） -->
-                <div class="ai-drawer hidden" id="ai-drawer">
+<div class="ai-drawer hidden" id="ai-drawer">
                     <div class="ai-drawer-header">
                         <span class="ms-icon sm">history</span>
                         <span class="ai-drawer-title">对话记录</span>
@@ -402,8 +369,7 @@
                     <div class="ai-drawer-footer">一份对话一个文件，保存在数据目录的 ai_chats 中</div>
                 </div>
 
-                <!-- 当前对话的消息区（对话保存在数据目录的 ai_chats/{id}.json） -->
-                <div class="ai-messages" id="ai-messages">
+<div class="ai-messages" id="ai-messages">
                     <div class="ai-empty" id="ai-empty">
                         <span class="ms-icon">forum</span>
                         <p>问点什么吧，AI 会结合你的笔记回答</p>
@@ -417,35 +383,29 @@
                 </div>
 
                 <div class="ai-composer">
-                    <!-- 已选好、待发送的附件（图片缩略图 / 文件卡片） -->
+
                     <div class="ai-attach-strip hidden" id="ai-attachment-strip"></div>
-                    <!-- 输入框与它内部的那条底栏共用一层「字段」容器：底栏排在正文下方（不是叠上去），
-                         这样输入框内部滚动时正文不会钻到按钮底下。
-                         底栏左端是附带范围下拉；右端依次是 Agent 模式开关、附件与发送按钮
-                         （样式见 styles/ai.css 的 .ai-input-wrap） -->
+
                     <div class="ai-input-wrap">
                         <textarea class="ai-input" id="ai-input" spellcheck="false" placeholder="问点关于笔记的问题…（可拖入或粘贴图片 / 文本文件）"></textarea>
                         <div class="ai-composer-bar">
-                            <!-- 附带范围：第一项的文字由 scripts/ai.js 的 updateAiScopeOptions 按当前打开的笔记
-                                 写成「附带当前笔记：<笔记名>」；没有打开笔记时这一项会被摘掉 -->
+
                             <select class="ai-scope-select" id="ai-scope-select" title="本次提问附带的笔记范围">
                                 <option value="current">附带当前笔记</option>
                                 <option value="all">附带全部笔记</option>
                                 <option value="none">不附带笔记</option>
                             </select>
                             <div class="ai-composer-actions">
-                                <!-- Agent 模式：与标题栏的 AI 助手按钮同一套图标开关（点一下开、再点一下关），
-                                     开启时挂 .active 点亮成主题色；它排在附件按钮左边，与附件 / 发送同组 -->
+
                                 <button class="btn-action-icon" id="ai-agent-toggle" title="Agent 模式：开启后 AI 可以新建与修改笔记（正文、标题、文件夹、标签、置顶与废纸篓），每一步都能撤销" aria-pressed="false">
-                                    <!-- 机器人图标：Agent 模式的标识（原属 AI 助手，现随 Agent 模式走） -->
+
                                     <span class="ms-icon sm">smart_toy</span>
                                 </button>
-                                <!-- 附件：排在发送按钮左边；只留一枚图标、不带按钮底色 -->
+
                                 <button class="btn-action-icon" id="btn-ai-attach" title="添加图片或文本文件（也可直接拖入、粘贴）">
                                     <span class="ms-icon sm">attach_file</span>
                                 </button>
-                                <!-- 两枚都只留图标、不带按钮底色：发送用主题色（--accent 跟随品牌色设置），
-                                     停止用中性色，处在同一个位置时一眼能分出是哪一个 -->
+
                                 <button class="ai-send-btn hidden" id="btn-ai-stop" title="停止生成" aria-label="停止生成">
                                     <span class="ms-icon">stop_circle</span>
                                 </button>
@@ -458,27 +418,21 @@
                 </div>
             </aside>
 
-            <!-- 5. Settings View：分类侧边栏 + 分类内容面板 -->
-            <div class="settings-view hidden" id="settings-view">
-                <!-- 设置分类导航（条目由 SETTINGS_CATEGORIES 在 initSettingsNav 中生成） -->
+<div class="settings-view hidden" id="settings-view">
+
                 <aside class="settings-sidebar">
-                    <!-- 现代布局下的设置页是整屏铺开的（侧边栏与笔记列表都让位，工作区连同它的标签页也不占位），
-                         靠这个按钮回到笔记列表（经典布局下不显示） -->
+
                     <button class="settings-back" id="btn-settings-back" title="返回笔记列表">
                         <span class="ms-icon xs">arrow_back</span>
-                        <!-- 文字在窄窗口下隐藏，只留图标（见 styles/settings.css 的自适应一段） -->
+
                         <span class="settings-back-label">返回</span>
                     </button>
                     <nav class="settings-nav" id="settings-nav" aria-label="设置分类"></nav>
                 </aside>
 
-                <!-- 内容区上方的拖动空白：现代布局下设置页不收标题栏，而内容又会一路顶到窗口
-                     上沿——能拖窗口的那一条留白因此必须不参与滚动，样式见 styles/mode.css -->
-                <div class="settings-drag-band" aria-hidden="true"></div>
+<div class="settings-drag-band" aria-hidden="true"></div>
 
-                <!-- 设置内容区：面板与侧边栏条目通过 data-settings-panel 一一对应。
-                     顶端的标题与描述跟着当前分类走（见 scripts/settings.js） -->
-                <div class="settings-content">
+<div class="settings-content">
                     <div class="settings-header">
                         <div class="settings-title">
                             <span class="ms-icon md">settings</span>
@@ -487,8 +441,7 @@
                         <div class="settings-desc" id="settings-header-desc">管理 EsprinNemo 的偏好设置与编辑器行为</div>
                     </div>
 
-                    <!-- 分类：编辑器与文本 -->
-                    <div class="settings-panel hidden" data-settings-panel="editor">
+<div class="settings-panel hidden" data-settings-panel="editor">
                         <div class="settings-section">
                             <div class="settings-section-title">编辑器与文本</div>
                             <div class="settings-row">
@@ -516,9 +469,7 @@
                             </div>
                         </div>
 
-                        <!-- 分区二：随口记（语音转文本）。识别由 Windows 自带的桌面识别引擎完成，
-                             音频只进本机引擎、不出本机，也没有联网档位 -->
-                        <div class="settings-section">
+<div class="settings-section">
                             <div class="settings-section-title">随口记（语音转文本）</div>
                             <div class="settings-row">
                                 <div class="settings-row-info">
@@ -553,10 +504,8 @@
                         </div>
                     </div>
 
-                    <!-- 分类：外观（界面 / 主题 / 主题色 / 字体四个分区） -->
-                    <div class="settings-panel hidden" data-settings-panel="appearance">
-                        <!-- 分区一：界面 —— 布局、缩放与圆角改的都是「这张界面长什么样」。
-                             布局只切 <html> 上的类名，其余排布全由 styles/mode.css 承担 -->
+<div class="settings-panel hidden" data-settings-panel="appearance">
+
                         <div class="settings-section">
                             <div class="settings-section-title">界面</div>
                             <div class="settings-row">
@@ -569,9 +518,7 @@
                                     <option value="classic">经典布局</option>
                                 </select>
                             </div>
-                            <!-- 「禁用标签页」只属于现代布局：整行随布局显隐（.settings-row-modern-only，
-                                 见 styles/mode.css），经典布局里不排出来，
-                                 免得给出一个按下去没反应的开关 -->
+
                             <div class="settings-row settings-row-modern-only">
                                 <div class="settings-row-info">
                                     <span class="settings-row-label">禁用标签页</span>
@@ -583,11 +530,7 @@
                                 </label>
                             </div>
 
-                            <!-- 缩放比例：直接改 Chromium 缩放（应用见 scripts/appearance.js）。
-                                 滑块与圆角尺度共用一套自绘交互（.settings-slider）：整体跟手拖动，
-                                 松手后吸附到最近的档位，也可直接点档位文字；
-                                 五档之外的尺寸走下面折叠着的「自定义比例」 -->
-                            <div class="settings-row">
+<div class="settings-row">
                                 <div class="settings-row-info">
                                     <span class="settings-row-label">缩放比例<span class="settings-value" id="ui-scale-value">100%</span>
                                         <button type="button" class="settings-inline-toggle" id="btn-ui-scale-custom-toggle"
@@ -611,9 +554,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <!-- 自定义比例：五档之外的尺寸收成一行，点上面那枚「自定义」才展开
-                                 （见 styles/settings.css 的 .settings-row-sub）；
-                                 生效与回退规则见 scripts/appearance.js 的 commitCustomUiScale -->
+
                             <div class="settings-row settings-row-sub hidden" id="ui-scale-custom-row">
                                 <div class="settings-row-info">
                                     <span class="settings-row-label">自定义比例</span>
@@ -627,8 +568,7 @@
                                 </div>
                             </div>
 
-                            <!-- 圆角尺度：与缩放共用同一套自绘滑块（四档，档位文字即档位名） -->
-                            <div class="settings-row">
+<div class="settings-row">
                                 <div class="settings-row-info">
                                     <span class="settings-row-label">圆角尺度</span>
                                     <span class="settings-row-desc">卡片、按钮、输入框、标签与开关的圆角大小</span>
@@ -650,9 +590,7 @@
                             </div>
                         </div>
 
-                        <!-- 分区二：主题 —— 明暗、风格与应用名颜色同属一套配色体系，收在一处；
-                             明暗模式的标题栏按钮与这里的下拉互相同步（见 scripts/appearance.js） -->
-                        <div class="settings-section">
+<div class="settings-section">
                             <div class="settings-section-title">主题</div>
                             <div class="settings-row">
                                 <div class="settings-row-info">
@@ -689,8 +627,7 @@
                             </div>
                         </div>
 
-                        <!-- 分区三：主题色 —— 预设、自定义与预览放在一处，改完立刻看得到效果 -->
-                        <div class="settings-section">
+<div class="settings-section">
                             <div class="settings-section-title">主题色</div>
 
                             <div class="settings-subsection-title">预设配色</div>
@@ -714,8 +651,7 @@
                             </div>
                         </div>
 
-                        <!-- 分区四：字体 —— 界面与文档各选西文 / CJK，两两共用同一份系统字体列表 -->
-                        <div class="settings-section">
+<div class="settings-section">
                             <div class="settings-section-title">字体</div>
                             <div class="settings-row-desc" id="font-list-status">正在读取本机字体列表…</div>
 
@@ -758,8 +694,7 @@
                         </div>
                     </div>
 
-                    <!-- 分类：AI 助手 -->
-                    <div class="settings-panel hidden" data-settings-panel="ai">
+<div class="settings-panel hidden" data-settings-panel="ai">
                         <div class="settings-section">
                             <div class="settings-section-title">总开关</div>
                             <div class="settings-row">
@@ -860,8 +795,7 @@
                         </div>
                     </div>
 
-                    <!-- 分类：秘密本（隐藏与密码。隐藏的条目不出现在任何列表里，只在这里能找到） -->
-                    <div class="settings-panel hidden" data-settings-panel="secret">
+<div class="settings-panel hidden" data-settings-panel="secret">
                         <div class="settings-section">
                             <div class="settings-section-title">隐藏与加密的文档</div>
                             <div class="settings-row">
@@ -878,8 +812,7 @@
                         </div>
                     </div>
 
-                    <!-- 分类：数据与存储 -->
-                    <div class="settings-panel hidden" data-settings-panel="data">
+<div class="settings-panel hidden" data-settings-panel="data">
                         <div class="settings-section">
                             <div class="settings-section-title">数据与存储</div>
                             <div class="settings-row" id="setting-data-row">
@@ -901,9 +834,7 @@
                                 更改位置时会询问是否迁移现有数据；切换即时生效，无需重启应用。
                             </div>
 
-                            <!-- 文件日志：导入 / 导出都直接读写本机数据目录，与本机存储是同一件事的两面，
-                                 因此并入同一个分区，不再单列一个标题 -->
-                            <div class="settings-row">
+<div class="settings-row">
                                 <div class="settings-row-info">
                                     <span class="settings-row-label">导入文件日志</span>
                                     <span class="settings-row-desc">选择一份服务端日志（journal.log，一行一条 put / del 操作）并重放到本地数据目录：日志里写过的文件按内容还原，标记为删除的路径在本地同样删除，日志没提到的文件保持原样。导入不改变同步进度、不推送任何内容；若日志里含 config.json，本机偏好设置也会随之变成日志里的那一份</span>
@@ -1010,9 +941,7 @@
                                 <input type="text" class="settings-input mono" id="setting-sync-device" spellcheck="false" placeholder="例如：台式机">
                             </div>
 
-                            <!-- 自动同步与同步操作：与上面的服务器、令牌同属一份同步配置，
-                                 因此并入同一个分区（整体显隐仍由 .sync-config-section 控制） -->
-                            <div class="settings-row" id="setting-sync-autosync-row">
+<div class="settings-row" id="setting-sync-autosync-row">
                                 <div class="settings-row-info">
                                     <span class="settings-row-label">自动同步</span>
                                     <span class="settings-row-desc">按间隔自动执行「拉取远端操作 → 重放 → 推送本地改动」；「自定义」可填写秒数或分钟数（5 秒 ~ 24 小时）。这里只决定「多久跑一次」：启用自建同步后每次启动应用都会同步一次，本地保存与删除也即时推送，都不受此设置影响</span>
@@ -1049,8 +978,7 @@
                             <div class="settings-row-desc sync-status" id="sync-status">正在读取配置…</div>
                         </div>
 
-                        <!-- 团队笔记：共享请求、共享到手与共享出去的笔记都汇总在这里（见 scripts/team_notes.js） -->
-                        <div class="settings-section">
+<div class="settings-section">
                             <div class="settings-section-title">团队笔记</div>
                             <div class="settings-row">
                                 <div class="settings-row-info">
@@ -1067,9 +995,8 @@
                         </div>
                     </div>
 
-                    <!-- 分类：系统（启动与托盘 / 桌面便利贴 / 更新与版本） -->
-                    <div class="settings-panel hidden" data-settings-panel="system">
-                        <!-- 分区一：启动与托盘 —— 两个开关说的都是「应用怎么在系统里待着」 -->
+<div class="settings-panel hidden" data-settings-panel="system">
+
                         <div class="settings-section">
                             <div class="settings-section-title">启动与托盘</div>
                             <div class="settings-row">
@@ -1097,9 +1024,7 @@
                             <div class="settings-row-desc" id="tray-status">正在读取托盘状态…</div>
                         </div>
 
-                        <!-- 分区二：桌面便利贴 —— 把待办或笔记贴到桌面上的一组置底小窗口
-                             （见 scripts/sticky_notes.js 与 main/sticky_notes.js） -->
-                        <div class="settings-section">
+<div class="settings-section">
                             <div class="settings-section-title">桌面便利贴</div>
                             <div class="settings-row">
                                 <div class="settings-row-info">
@@ -1142,8 +1067,7 @@
                             </div>
                         </div>
 
-                        <!-- 更新与版本：并入「系统」分类；便携版整块摘掉（见 scripts/update.js） -->
-                        <div class="settings-section settings-update-block">
+<div class="settings-section settings-update-block">
                             <div class="settings-section-title">自动更新</div>
                             <div class="settings-row">
                                 <div class="settings-row-info">
@@ -1200,14 +1124,14 @@
                                     <span class="update-notes-version" id="update-notes-version"></span>
                                     <span class="update-notes-date" id="update-notes-date"></span>
                                 </div>
-                                <!-- 新版本说明按 Markdown 渲染（见 scripts/update.js 的 setReleaseNotesBody） -->
+
                                 <div class="update-notes-body markdown-body" id="update-notes-body"></div>
                             </div>
                         </div>
 
                         <div class="settings-section settings-update-block">
                             <div class="settings-section-title">版本信息</div>
-                            <!-- 版本号下面一行展示项目地址（这里原本放的是「更新源」） -->
+
                             <div class="settings-row">
                                 <div class="settings-row-info">
                                     <span class="settings-row-label">Esprin Nemo <span id="update-current-version">…</span></span>
@@ -1219,8 +1143,7 @@
                             </div>
                         </div>
 
-                        <!-- 当前版本说明：取自更新源上 tag 等于当前版本的那条 release，同样按 Markdown 渲染 -->
-                        <div class="settings-section settings-update-block">
+<div class="settings-section settings-update-block">
                             <div class="settings-section-title">当前版本说明</div>
                             <div class="update-notes">
                                 <div class="update-notes-head">
@@ -1236,22 +1159,15 @@
         </div>
     </div>
 
-    <!-- Item Context Menu（菜单项按条目类型与状态动态生成） -->
-    <div class="context-menu hidden" id="note-context-menu"></div>
+<div class="context-menu hidden" id="note-context-menu"></div>
 
-    <!-- Folder Context Menu（重命名 / 删除，文件夹条目右键弹出） -->
-    <div class="context-menu hidden" id="folder-context-menu"></div>
+<div class="context-menu hidden" id="folder-context-menu"></div>
 
-    <!-- New Item Menu（点侧边栏顶部「新建」或空状态按钮后展开：新建笔记 / 新建待办）
-         外观直接复用下拉菜单的一套（见 styles/dropdown.css），位置由 scripts/context_menu.js 计算 -->
-    <div class="dropdown-menu new-item-menu hidden" id="new-item-menu"></div>
+<div class="dropdown-menu new-item-menu hidden" id="new-item-menu"></div>
 
-    <!-- Sticky Notes Menu（桌面便利贴：贴当前内容 / 新建空白纸 / 显示与收起全部，
-         位置与样式同样复用下拉菜单的一套，见 scripts/sticky_notes.js） -->
-    <div class="dropdown-menu new-item-menu hidden" id="sticky-notes-menu"></div>
+<div class="dropdown-menu new-item-menu hidden" id="sticky-notes-menu"></div>
 
-    <!-- Toast Container -->
-    <div class="toast-box" id="toast-container"></div>
+<div class="toast-box" id="toast-container"></div>
 
     <script src="./scripts/state.js"></script>
     <script src="./scripts/storage.js"></script>

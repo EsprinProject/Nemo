@@ -1,19 +1,9 @@
-/* 团队笔记：条目的「共享…」入口（右键菜单）与设置页的数据与同步 → 团队笔记分区。
-
-   共享关系记在服务端（谁把哪一篇共享给了谁、对方同意了没有），客户端只做两件事：
-     · 发起与应答：邀请某个账户、同意 / 拒绝收到的请求、撤销自己发出的、退出已加入的；
-     · 读回投影：别人共享过来的笔记落在数据目录的 shared/<所有者 id>/ 下（见 scripts/storage.js），
-       在列表里就是一篇普通笔记，改动会推回所有者那份。
-
-   共享动作之后主进程会追一次同步，因此这里拿到结果要按「本地文件是否被改过」决定要不要重载数据。 */
-
-// 最近一次从服务端读到的共享列表（null 表示还没读到或读取失败）
 let teamNotesData = null;
-// 共享动作进行中：按钮统一置灰，避免连点
+
 let teamNotesBusy = false;
-// 上一次读取的时刻：设置页每次渲染都会走到这里，短时间内不重复请求
+
 let teamNotesFetchedAt = 0;
-// 上一次读到的待确认条数（null 表示还没读到过）：多出来时才提示一次
+
 let teamRequestsKnown = null;
 const TEAM_NOTES_REFRESH_MS = 5000;
 
@@ -28,8 +18,6 @@ function setTeamNotesStatus(text, tone) {
     status.dataset.tone = tone || '';
 }
 
-/* ---------------- 读取 ---------------- */
-
 async function loadTeamNotes() {
     if (!teamNotesEnabled()) {
         teamNotesData = null;
@@ -41,7 +29,7 @@ async function loadTeamNotes() {
         const result = await ipcRenderer.invoke('sync:shares');
         teamNotesData = result && result.ok ? {
             ...result,
-            // 三个列表都按数组兜底：服务端版本偏旧时不会留下读到一半的界面
+
             incoming: Array.isArray(result.incoming) ? result.incoming : [],
             received: Array.isArray(result.received) ? result.received : [],
             outgoing: Array.isArray(result.outgoing) ? result.outgoing : []
@@ -59,8 +47,6 @@ async function loadTeamNotes() {
     return teamNotesData;
 }
 
-/* 新到的共享请求只有服务端知道（它不带来任何本地文件改动），因此每轮同步结束后都会读一次列表；
-   待确认条数比上一次多时提示一句，多出来的那几条才不至于没人看见。 */
 function announceTeamRequests() {
     if (!teamNotesData) return;
     const pending = Array.isArray(teamNotesData.incoming) ? teamNotesData.incoming.length : 0;
@@ -70,14 +56,11 @@ function announceTeamRequests() {
     teamRequestsKnown = pending;
 }
 
-// 立即刷新（按钮与共享动作之后走这里）
 async function refreshTeamNotes() {
     await loadTeamNotes();
     syncTeamNotesSettingsUI();
 }
 
-/* 设置页渲染时调用：短时间内的重复渲染只按现有数据重画，不重复请求服务端。
-   同步刚拉下来的改动也可能带来新的共享状态，那种情况由 sync:applied 那一侧再叫一次。 */
 function refreshTeamNotesSoon() {
     if (!teamNotesEnabled()) {
         teamNotesData = null;
@@ -91,14 +74,10 @@ function refreshTeamNotesSoon() {
     refreshTeamNotes().catch(() => {});
 }
 
-/* ---------------- 设置页列表 ---------------- */
-
-// 共享记录对应的本地条目 id：接收方那边是 shared:<所有者 id>:<条目 id>，所有者那边就是条目 id
 function teamLocalItemId(record, isOwner) {
     return isOwner ? String(record.noteId) : sharedItemId(record.owner, record.noteId);
 }
 
-// 标题优先取本地那一篇（刚改过名字时更及时），拿不到才用服务端给的
 function teamNoteTitle(record, isOwner) {
     const item = typeof getItemById === 'function' ? getItemById(teamLocalItemId(record, isOwner)) : null;
     if (item) return itemDisplayTitle(item);
@@ -149,7 +128,6 @@ function teamEmptyRow(text) {
     return empty;
 }
 
-// 打开本地那一篇：共享过来的条目进的是同一套标签页（id 带 shared: 前缀）
 function openTeamNote(record, isOwner) {
     const itemId = teamLocalItemId(record, isOwner);
     if (!getItemById(itemId)) {
@@ -182,8 +160,7 @@ function syncTeamNotesSettingsUI() {
         return;
     }
 
-    // 1. 收到的请求：同意之前那篇笔记不会出现在本地
-    if (!data.incoming.length) {
+if (!data.incoming.length) {
         requests.appendChild(teamEmptyRow('暂无共享请求：别人把笔记共享过来时会出现在这里。'));
     } else {
         data.incoming.forEach((record) => {
@@ -200,8 +177,7 @@ function syncTeamNotesSettingsUI() {
         });
     }
 
-    // 2. 共享到手与共享出去的：一个列表里按角色分别说明
-    const rows = [];
+const rows = [];
     data.received.forEach((record) => {
         const itemId = teamLocalItemId(record, false);
         const local = getItemById(itemId);
@@ -249,10 +225,6 @@ function syncTeamNotesSettingsUI() {
         : `暂无共享记录（账户 ${data.user || '未知'}）。`);
 }
 
-/* ---------------- 共享动作 ---------------- */
-
-/* 共享动作之后主进程追了一次同步：本地文件确有改动时重载数据，界面才会看到（或看不到）这篇笔记。
-   adoptDataDir 会把设置页一起重画，因此状态行与列表在它之后再写。 */
 function applyTeamShareResult(result, message) {
     const synced = result && result.synced;
     if (synced && (synced.written || synced.deleted)) {
@@ -266,7 +238,6 @@ function applyTeamShareResult(result, message) {
     showToast(message);
 }
 
-// 动作进行中把列表里的按钮一并置灰（与设置页同步按钮的 setSyncBusy 同一套做法）
 function setTeamActionButtonsDisabled(disabled) {
     document.querySelectorAll('#settings-view .team-item-actions button').forEach((button) => {
         button.disabled = disabled;
@@ -346,9 +317,6 @@ async function leaveTeamShare(record) {
     await refreshTeamNotes();
 }
 
-/* ---------------- 右键菜单入口 ---------------- */
-
-// 条目右键菜单 →「共享…」：输入对方的账户 ID 或账户名，发出共享请求
 async function shareNoteFromMenu(itemId) {
     const item = getItemById(itemId);
     if (!item) return;
@@ -397,8 +365,7 @@ async function shareNoteFromMenu(itemId) {
     teamNotesBusy = true;
     setTeamNotesStatus('正在共享…');
     try {
-        /* 先把本机改动推上去：服务端只接受「它已经见过」的笔记。
-           同步失败不影响这一步，真正的失败原因由下面的请求返回。 */
+
         flushPendingSave();
         await ipcRenderer.invoke('sync:now');
     } catch (err) {
@@ -415,7 +382,6 @@ async function shareNoteFromMenu(itemId) {
     await refreshTeamNotes();
 }
 
-// 条目右键菜单 →「退出共享」：共享过来的笔记只能这样从列表里移除
 async function leaveSharedNoteFromMenu(itemId) {
     const item = getItemById(itemId);
     if (!isSharedItem(item)) return;
@@ -430,8 +396,6 @@ async function leaveSharedNoteFromMenu(itemId) {
     }
     await leaveTeamShare(record);
 }
-
-/* ---------------- 初始化 ---------------- */
 
 function initTeamNotesSettings() {
     const refreshBtn = document.getElementById('btn-team-refresh');

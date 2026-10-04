@@ -1,11 +1,5 @@
-/* 编辑器：Markdown 预览刷新、字数统计、只读态与视图模式，以及格式化与 Tab 缩进。
-   编辑器同时服务于笔记与待办，取用当前条目一律走 getActiveItem()。 */
-
-// MD 预览刷新节流：连续输入时每次字符变动都重置计时，
-// 只有静默满 1 秒才真正重新解析 Markdown 并刷新预览
 const PREVIEW_REFRESH_DELAY = 1000;
 
-// 已渲染内容指纹：笔记与正文都没变时跳过整篇解析与 DOM 重建
 let lastPreviewNoteId = null;
 let lastPreviewContent = null;
 
@@ -17,30 +11,23 @@ function scheduleRenderMarkdown() {
     }, PREVIEW_REFRESH_DELAY);
 }
 
-// 立即刷新，并取消等待中的延时刷新（切换笔记/视图等场景要即时看到结果）
 function flushRenderMarkdown() {
     clearTimeout(State.previewTimer);
     State.previewTimer = null;
     renderMarkdown(true);
 }
 
-// 是否处于「必须解析预览」的场景：编辑视图下预览区整块隐藏，
-// 解析出来的 HTML 没有任何人看（见 updateViewModeUI）
 function isPreviewVisible() {
     return State.viewMode !== 'edit';
 }
 
-// force 为 true 时强制重解析；否则内容与上次一致就直接返回
 function renderMarkdown(force = false) {
-    // 预览区不可见（默认的编辑视图）时整个跳过：既不解析 Markdown，也不给隐藏的容器写 innerHTML。
-    // 切换视图模式的按钮会先把 viewMode 改成分屏 / 预览再调用 flushRenderMarkdown，
-    // 因此真正要看预览时这里一定放行；编辑过程中的延时刷新与切换条目则一路省掉。
-    // 跳过后指纹不更新，等预览可见时自然会完整解析一次，看到的始终是最新内容。
-    if (!isPreviewVisible()) return;
+
+if (!isPreviewVisible()) return;
 
     const item = getActiveItem();
     const itemId = item ? item.id : null;
-    // 加密且未解锁的条目：正文还是密文，解析出来没有意义，预览直接留空
+
     if (isSecretLocked(item)) {
         lastPreviewNoteId = itemId;
         lastPreviewContent = null;
@@ -60,28 +47,49 @@ function renderMarkdown(force = false) {
     }
     container.innerHTML = marked.parse(content || '*空内容*');
 
-    // 处理预览区内的链接与附件点击：
-    // 若点击的是本地附件（如 assets/xxx.pdf 或其他文件），调用主进程在系统默认程序中打开
-    container.querySelectorAll('a').forEach((link) => {
+container.querySelectorAll('a').forEach((link) => {
         const rawHref = link.getAttribute('data-raw-href') || link.getAttribute('href') || '';
-        if (rawHref.startsWith('assets/')) {
+        if (!rawHref || rawHref.startsWith('http://') || rawHref.startsWith('https://') ||
+            rawHref.startsWith('mailto:') || rawHref.startsWith('#') || rawHref.startsWith('//')) {
+            return;
+        }
+        if (rawHref.includes('.')) {
             link.onclick = (e) => {
                 e.preventDefault();
-                ipcRenderer.invoke('assets:open-file', rawHref).then((res) => {
-                    if (res && !res.ok) {
-                        showToast(`打开附件失败: ${res.error || '未知错误'}`);
+                const curItem = getActiveItem();
+                if (!curItem) return;
+                const fullPath = resolveItemAssetPath(curItem.id, rawHref);
+                if (!fs.existsSync(fullPath)) {
+                    showToast('文件不存在: ' + rawHref);
+                    return;
+                }
+                ipcRenderer.invoke('assets:open-file', { path: rawHref, itemId: curItem.id }).then((res) => {
+                    if (res && !res.ok && res.error) {
+                        showToast('打开附件失败: ' + res.error);
                     }
-                }).catch((err) => {
+                }).catch(() => {
                     showToast('打开附件失败');
                 });
             };
         }
     });
 
+    container.querySelectorAll('img').forEach((img) => {
+        const src = img.getAttribute('src') || '';
+        if (!src || src.startsWith('http://') || src.startsWith('https://') ||
+            src.startsWith('data:') || src.startsWith('file://')) {
+            return;
+        }
+        if (src.includes('.')) {
+            const fullPath = resolveItemAssetPath(itemId, src);
+            img.src = 'file:///' + fullPath.replace(/\\/g, '/');
+        }
+    });
+
     container.querySelectorAll('input[type="checkbox"]').forEach((cb, idx) => {
         cb.removeAttribute('disabled');
         cb.onchange = () => {
-            // 重新取回当前条目，避免闭包引用已被替换的旧对象
+
             const active = getActiveItem();
             if (!active || isReadOnlyItem(active)) return;
             let curIdx = 0;
@@ -99,29 +107,20 @@ function renderMarkdown(force = false) {
     });
 }
 
-// 统计信息同样按内容指纹去重：长文档的截词统计开销不低
 let lastStatsNoteId = null;
 let lastStatsContent = null;
 let lastStatsUpdatedAt = null;
 
-/* 中英混排的字数统计：CJK / 谚文按「字」计，其余按空白分词计。
-   旧实现一律按空白分词，一整段中文会被算成 1 个字，与「字数」的直觉完全不符。
-
-   这里用一次 split 同时得到两件事：分隔符的出现次数就是 CJK 字数，
-   切出来的各段则正好是需要按空白分词的西文部分。
-   相比「match 出全部 CJK 字符 + 把整篇正文 replace 成一个去掉汉字的新字符串」，
-   少了一次与正文等长的字符串分配——自动保存每 300ms 就会走一遍这里，
-   长篇中文文档下这一步省下的内存与时间都很可观。 */
 const CJK_CHAR_PATTERN = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff\u{20000}-\u{3ffff}]/gu;
 
 function countWords(text) {
     if (!text) return 0;
     const segments = text.split(CJK_CHAR_PATTERN);
-    // split 的分段数比分隔符数多 1，因此 CJK 字数就是 segments.length - 1
+
     let words = 0;
     for (let i = 0; i < segments.length; i++) {
         const segment = segments[i].trim();
-        // 去掉 CJK 字符后按空白分词，标点与英文单词因此不会被并入中文字数
+
         if (segment) words += segment.split(/\s+/).length;
     }
     return (segments.length - 1) + words;
@@ -132,7 +131,7 @@ function updateStats() {
     if (!item) return;
 
     const locked = isSecretLocked(item);
-    // 加密且未解锁的条目正文是密文：字数与字符数无从统计，用占位符代替
+
     const content = locked ? '' : (item.content || '');
     if (item.id === lastStatsNoteId && content === lastStatsContent && item.updatedAt === lastStatsUpdatedAt) return;
     lastStatsNoteId = item.id;
@@ -144,7 +143,6 @@ function updateStats() {
     document.getElementById('stat-last-edit').textContent = `修改于 ${formatDate(item.updatedAt)}`;
 }
 
-// 只读模式：废纸篓中的条目与还差一道密码的加密条目只能查看与导出，所有编辑入口统一在这里关闭
 const READONLY_STATUS_TEXT = '只读 · 位于废纸篓';
 const LOCKED_STATUS_TEXT = '只读 · 正文已加密';
 
@@ -165,8 +163,7 @@ function applyEditorReadOnly(item) {
     addTagBtn.disabled = readOnly;
     if (doneBtn) doneBtn.disabled = readOnly;
 
-    // 只读时排版工具栏没有意义，直接隐藏（上方已确保非只读时恢复显示）
-    toolbar.classList.toggle('hidden', readOnly);
+toolbar.classList.toggle('hidden', readOnly);
 
     const saveStatus = document.getElementById('save-status');
     if (readOnly) {
@@ -176,8 +173,6 @@ function applyEditorReadOnly(item) {
     }
 }
 
-/* 加密且未解锁的条目：编辑区盖上锁面板，正文与统计一并让位给「输入密码」这一个动作。
-   其余情况（没设密码，或本轮已经解开）把面板收起，编辑区照常可用 */
 function applySecretLockUI(item) {
     const overlay = document.getElementById('secret-lock-overlay');
     if (!overlay) return;
@@ -213,7 +208,6 @@ function updateViewModeUI() {
     }
 }
 
-// Markdown Formatter Shortcuts
 function formatMarkdown(type) {
     const textarea = document.getElementById('textarea-note-content');
     if (textarea.readOnly) return;
@@ -242,7 +236,6 @@ function formatMarkdown(type) {
     flushRenderMarkdown();
 }
 
-// 常见图片扩展名
 const IMAGE_EXT_LIST = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'];
 
 function isImageFileName(filename) {
@@ -250,15 +243,34 @@ function isImageFileName(filename) {
     return IMAGE_EXT_LIST.includes(ext);
 }
 
-// 保存文件到 assets/ 目录并返回相对路径（assets/xxx.ext）
+const VIDEO_EXT_LIST = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.ogv'];
+
+function isVideoFileName(filename) {
+    const ext = path.extname(String(filename || '')).toLowerCase();
+    return VIDEO_EXT_LIST.includes(ext);
+}
+
+function resolveUniqueFileName(itemId, baseName) {
+    const dir = ensureItemAssetsDir(itemId);
+    let name = baseName;
+    let counter = 1;
+    const ext = path.extname(baseName);
+    const stem = baseName.slice(0, baseName.length - ext.length);
+    while (fs.existsSync(path.join(dir, name))) {
+        name = `${stem}_${counter}${ext}`;
+        counter++;
+    }
+    return name;
+}
+
 function saveAssetFile(sourcePath, buffer = null, originalName = '') {
-    ensureStorageDirs();
+    const item = getActiveItem();
+    if (!item) return null;
+    const itemId = item.id;
+    const dir = ensureItemAssetsDir(itemId);
     const name = originalName || (sourcePath ? path.basename(sourcePath) : 'file.bin');
-    const ext = path.extname(name).toLowerCase();
-    const safeExt = /^\.[A-Za-z0-9]{1,8}$/.test(ext) ? ext : '';
-    const randomId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-    const storedName = `${randomId}${safeExt}`;
-    const targetPath = path.join(ASSETS_DIR, storedName);
+    const storedName = resolveUniqueFileName(itemId, name);
+    const targetPath = path.join(dir, storedName);
 
     if (buffer) {
         fs.writeFileSync(targetPath, buffer);
@@ -269,13 +281,12 @@ function saveAssetFile(sourcePath, buffer = null, originalName = '') {
     }
     notifyRemoteWrite(targetPath);
     return {
-        name,
-        relative: `assets/${storedName}`,
+        name: storedName,
+        relative: itemAssetRelativePath(itemId, storedName),
         isImage: isImageFileName(name)
     };
 }
 
-// 将资源引用 Markdown 插入编辑器光标所在处
 function insertAssetReferences(assetList) {
     if (!assetList || !assetList.length) return;
     const textarea = document.getElementById('textarea-note-content');
@@ -302,7 +313,6 @@ function insertAssetReferences(assetList) {
     flushRenderMarkdown();
 }
 
-// 弹出文件选择框插入附件
 async function pickAndInsertAssets() {
     const item = getActiveItem();
     if (!item) {
@@ -342,12 +352,270 @@ async function pickAndInsertAssets() {
     }
 }
 
-// 编辑器内 Tab 缩进：按 Tab 不再切换焦点，而是插入缩进
-// - 光标处：插入一个缩进单位
-// - 选中多行：整块缩进
-// - Shift+Tab：减少缩进
-// 缩进单位是真正的制表符（\t），不是空格：源文件里存的就是缩进符号本身，
-// 显示宽度由样式里的 tab-size 决定（见 styles/editor.css 的 .editor-textarea）
+const FM_PANEL_WIDTH_TRANSITION_MS = 260;
+const FM_PANEL_COLLAPSED_CLASS = 'fm-collapsed';
+
+let fmPanelExpanded = false;
+let fmPanelHideTimer = null;
+
+function clearFmPanelHideTimer() {
+    if (fmPanelHideTimer) {
+        clearTimeout(fmPanelHideTimer);
+        fmPanelHideTimer = null;
+    }
+}
+
+function expandFmPanel(panel) {
+    clearFmPanelHideTimer();
+    panel.classList.add(FM_PANEL_COLLAPSED_CLASS);
+    panel.classList.remove('hidden');
+    void panel.offsetWidth;
+    panel.classList.remove(FM_PANEL_COLLAPSED_CLASS);
+}
+
+function collapseFmPanel(panel) {
+    panel.classList.add(FM_PANEL_COLLAPSED_CLASS);
+    clearFmPanelHideTimer();
+    fmPanelHideTimer = setTimeout(() => {
+        fmPanelHideTimer = null;
+        panel.classList.add('hidden');
+    }, FM_PANEL_WIDTH_TRANSITION_MS + 60);
+}
+
+function hideFmPanelImmediately(panel) {
+    clearFmPanelHideTimer();
+    panel.classList.add(FM_PANEL_COLLAPSED_CLASS, 'hidden');
+}
+
+function applyFileManagerVisibility() {
+    const panel = document.getElementById('fm-panel');
+    const btn = document.getElementById('btn-file-manager');
+    if (!panel) return;
+
+    const inSettings = State.activeNoteId === 'settings';
+    const show = !!State.fmPanelOpen && !!State.activeNoteId && !inSettings;
+    if (btn) btn.classList.toggle('active', show);
+
+    if (show === fmPanelExpanded) {
+        return;
+    }
+    fmPanelExpanded = show;
+
+    if (show) expandFmPanel(panel);
+    else if (inSettings) hideFmPanelImmediately(panel);
+    else collapseFmPanel(panel);
+}
+
+function toggleFileManager() {
+    if (!State.activeNoteId || State.activeNoteId === 'settings') {
+        showToast('请先打开一篇笔记或待办');
+        return;
+    }
+
+    if (State.fmPanelOpen) {
+        State.fmPanelOpen = false;
+        applyFileManagerVisibility();
+        return;
+    }
+
+    if (State.aiPanelOpen) {
+        setAiPanelOpen(false);
+    }
+
+    State.fmPanelOpen = true;
+    applyFileManagerVisibility();
+    renderFileManager();
+}
+
+function renderFileManager() {
+    const panel = document.getElementById('fm-panel');
+    const list = document.getElementById('fm-file-list');
+    const empty = document.getElementById('fm-empty');
+    const count = document.getElementById('fm-file-count');
+    if (!panel || !list) return;
+
+    const item = getActiveItem();
+    if (!item) { list.innerHTML = ''; return; }
+
+    const files = listItemAssetFiles(item.id);
+    list.innerHTML = '';
+    if (empty) empty.classList.toggle('hidden', files.length > 0);
+
+    if (count) count.textContent = `${files.length} 个文件`;
+
+    const relativePrefix = `items/${item.id}/`;
+
+    files.forEach((file) => {
+        const sizeText = formatFileSize(file.size);
+        const row = document.createElement('div');
+        row.className = 'fm-file-row';
+        row.draggable = true;
+        row.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', file.name);
+            e.dataTransfer.setData('application/x-fm-file', JSON.stringify({
+                name: file.name,
+                itemId: item.id
+            }));
+            e.dataTransfer.effectAllowed = 'copy';
+        });
+
+        const icon = document.createElement('span');
+        icon.className = 'ms-icon sm fm-file-icon';
+        icon.textContent = isImageFileName(file.name) ? 'image' : 'description';
+
+        const info = document.createElement('div');
+        info.className = 'fm-file-info';
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'fm-file-name';
+        nameEl.textContent = file.name;
+        nameEl.title = file.name;
+
+        const sizeEl = document.createElement('span');
+        sizeEl.className = 'fm-file-size';
+        sizeEl.textContent = sizeText;
+
+        info.appendChild(nameEl);
+        info.appendChild(sizeEl);
+
+        const actions = document.createElement('div');
+        actions.className = 'fm-file-actions';
+
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'btn-action-icon fm-file-action';
+        renameBtn.title = '重命名';
+        renameBtn.innerHTML = '<span class="ms-icon xs">edit</span>';
+        renameBtn.onclick = () => promptRenameItemFile(item, file.name);
+
+        const downloadBtn = document.createElement('button');
+        downloadBtn.className = 'btn-action-icon fm-file-action';
+        downloadBtn.title = '下载/另存为';
+        downloadBtn.innerHTML = '<span class="ms-icon xs">download</span>';
+        downloadBtn.onclick = () => downloadItemFile(item.id, file.name);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn-action-icon fm-file-action fm-file-action-danger';
+        deleteBtn.title = '删除';
+        deleteBtn.innerHTML = '<span class="ms-icon xs">delete</span>';
+        deleteBtn.onclick = () => confirmDeleteItemFile(item, file.name);
+
+        actions.appendChild(renameBtn);
+        actions.appendChild(downloadBtn);
+        actions.appendChild(deleteBtn);
+
+        row.appendChild(icon);
+        row.appendChild(info);
+        row.appendChild(actions);
+        list.appendChild(row);
+    });
+}
+
+function formatFileSize(bytes) {
+    const size = Number(bytes) || 0;
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+async function downloadItemFile(itemId, filename) {
+    try {
+        const safeId = String(itemId || '').replace(/[\\/:*?"<>|]/g, '_');
+        const result = await ipcRenderer.invoke('fm:save-file', { itemId: safeId, filename });
+        if (result && !result.ok && result.error) {
+            showToast(`下载失败: ${result.error}`);
+        }
+    } catch (err) {
+        console.error('下载文件失败:', err);
+        showToast('下载文件失败');
+    }
+}
+
+function confirmDeleteItemFile(item, filename) {
+    if (!item || isReadOnlyItem(item)) return;
+    const confirmed = confirm(`确定要删除文件「${filename}」吗？此操作不可撤销。`);
+    if (!confirmed) return;
+    deleteItemFile(item, filename);
+}
+
+function deleteItemFile(item, filename) {
+    if (!item || isReadOnlyItem(item)) return;
+    try {
+        const filePath = resolveItemAssetPath(item.id, filename);
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            notifyRemoteDelete(filePath);
+        }
+        renderFileManager();
+        showToast(`已删除「${filename}」`);
+    } catch (err) {
+        console.error('删除文件失败:', err);
+        showToast('删除文件失败');
+    }
+}
+
+async function promptRenameItemFile(item, oldName) {
+    if (!item || isReadOnlyItem(item)) return;
+    const newName = await showPrompt('请输入新文件名：', {
+        title: '重命名文件',
+        placeholder: oldName,
+        confirmLabel: '重命名',
+        value: oldName
+    });
+    if (!newName || newName === oldName) return;
+    if (!/^[^\\/:*?"<>|]{1,200}$/.test(newName)) {
+        showToast('文件名包含非法字符或过长');
+        return;
+    }
+    renameItemFile(item, oldName, newName);
+}
+
+function renameItemFile(item, oldName, newName) {
+    if (!item || isReadOnlyItem(item)) return;
+    const dir = itemAssetsDir(item.id);
+    const oldPath = path.join(dir, oldName);
+    const newPath = path.join(dir, newName);
+    try {
+        if (!fs.existsSync(oldPath)) {
+            showToast('文件不存在');
+            return;
+        }
+        if (fs.existsSync(newPath)) {
+            showToast('已存在同名文件');
+            return;
+        }
+        fs.renameSync(oldPath, newPath);
+        notifyRemoteWrite(newPath);
+        notifyRemoteDelete(oldPath);
+
+        const oldRelative = itemAssetRelativePath(item.id, oldName);
+        const newRelative = itemAssetRelativePath(item.id, newName);
+        updateItemFileReferences(item, oldRelative, newRelative);
+
+        renderFileManager();
+        showToast(`已重命名为「${newName}」`);
+    } catch (err) {
+        console.error('重命名文件失败:', err);
+        showToast('重命名文件失败');
+    }
+}
+
+function updateItemFileReferences(item, oldRelative, newRelative) {
+    const textarea = document.getElementById('textarea-note-content');
+    if (!textarea) return;
+
+    let content = textarea.value;
+    let changed = false;
+
+    content = content.split(oldRelative).join(newRelative);
+    if (content !== textarea.value) changed = true;
+
+    if (changed) {
+        textarea.value = content;
+        autoSaveActiveItem();
+        flushRenderMarkdown();
+    }
+}
+
 const INDENT_UNIT = '\t';
 
 function handleContentTab(e) {
@@ -361,7 +629,7 @@ function handleContentTab(e) {
     const lineStart = value.lastIndexOf('\n', start - 1) + 1;
 
     if (e.shiftKey) {
-        // 反缩进：去掉选中行（或光标所在行）行首的一个缩进单位
+
         const singleLine = start === end;
         let lineEnd = value.indexOf('\n', singleLine ? start : end);
         if (lineEnd === -1) lineEnd = value.length;
@@ -387,18 +655,18 @@ function handleContentTab(e) {
             );
         }
     } else if (start === end) {
-        // 光标处直接插入缩进（空行也会插入，方便续写缩进内容）
+
         textarea.value = value.slice(0, start) + INDENT_UNIT + value.slice(end);
         const caret = start + INDENT_UNIT.length;
         textarea.setSelectionRange(caret, caret);
     } else {
-        // 选中内容跨行时整体缩进（行内选中同样按整行处理）
+
         let lineEnd = value.indexOf('\n', end);
         if (lineEnd === -1) lineEnd = value.length;
 
         let inserted = 0;
         const newBlock = value.slice(lineStart, lineEnd).split('\n').map(line => {
-            if (!line.length) return line; // 空行不缩进，避免产生行尾空白
+            if (!line.length) return line;
             inserted++;
             return INDENT_UNIT + line;
         }).join('\n');
@@ -413,3 +681,56 @@ function handleContentTab(e) {
     autoSaveActiveItem();
     scheduleRenderMarkdown();
 }
+
+let fmDropCursorPos = null;
+
+function setupEditorDrop() {
+    const textarea = document.getElementById('textarea-note-content');
+    if (!textarea) return;
+
+    textarea.addEventListener('dragover', (e) => {
+        const data = e.dataTransfer;
+        if (!data.types.includes('application/x-fm-file')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        fmDropCursorPos = textarea.selectionStart;
+    });
+
+    textarea.addEventListener('drop', (e) => {
+        const raw = e.dataTransfer.getData('application/x-fm-file');
+        if (!raw) return;
+        e.preventDefault();
+
+        let fileInfo;
+        try {
+            fileInfo = JSON.parse(raw);
+        } catch {
+            return;
+        }
+        const name = fileInfo.name;
+        if (!name) return;
+
+        if (textarea.readOnly) return;
+        const start = fmDropCursorPos != null ? fmDropCursorPos : textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        fmDropCursorPos = null;
+
+        let insertText;
+        if (isImageFileName(name)) {
+            insertText = `![${name}](${name})`;
+        } else if (isVideoFileName(name)) {
+            insertText = `<video src="${name}" controls></video>`;
+        } else {
+            insertText = `[${name}](${name})`;
+        }
+
+        textarea.value = textarea.value.substring(0, start) + insertText + textarea.value.substring(end);
+        const newPos = start + insertText.length;
+        textarea.setSelectionRange(newPos, newPos);
+        textarea.focus();
+        autoSaveActiveItem();
+        flushRenderMarkdown();
+    });
+}
+
+setupEditorDrop();

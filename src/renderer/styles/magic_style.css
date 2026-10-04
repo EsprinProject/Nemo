@@ -1,10 +1,3 @@
-/* 魔幻：高饱和渐变 + 玻璃拟态 + 大圆角的生成式界面观感。
-
-   启用方式：设置页「外观与主题色 → 界面风格」写入 <html data-theme-style="magic">。
-   本文件与 alom.css 同层加载、选择器按属性值互斥，未选择该风格时对界面零影响。
-   配色令牌与 alom.css 同源，浅色档位由 :root.light 覆盖。 */
-
-/* ===== 深色（默认） ===== */
 :root[data-theme-style="magic"] {
     --bg-body: #0a0d1f;
     --bg-titlebar: rgba(24, 20, 54, 0.66);
@@ -30,12 +23,10 @@
     --item-hover: rgba(255, 255, 255, 0.06);
     --item-active: rgba(139, 92, 246, 0.18);
 
-    /* 圆角整体放大两档，最终值仍由 styles/radius.css 按「圆角」设置换算 */
-    --radius-base-sm: 10px;
+--radius-base-sm: 10px;
     --radius-base-md: 14px;
 
-    /* 风格私有令牌：渐变、光晕与玻璃材质统一从这里取，避免逐条重复字面量 */
-    --magic-gradient: linear-gradient(135deg, #8b5cf6 0%, #6366f1 48%, #22d3ee 100%);
+--magic-gradient: linear-gradient(135deg, #8b5cf6 0%, #6366f1 48%, #22d3ee 100%);
     --magic-gradient-soft: linear-gradient(135deg, rgba(139, 92, 246, 0.30), rgba(34, 211, 238, 0.16));
     --magic-glass: rgba(24, 20, 54, 0.62);
     --magic-glass-blur: blur(24px) saturate(180%);
@@ -44,7 +35,6 @@
     --magic-glow-lg: 0 18px 56px rgba(139, 92, 246, 0.45);
 }
 
-/* ===== 浅色 ===== */
 :root.light[data-theme-style="magic"] {
     --bg-body: #f7f5ff;
     --bg-titlebar: rgba(255, 255, 255, 0.74);
@@ -77,8 +67,6 @@
     --magic-glow-lg: 0 18px 56px rgba(124, 58, 237, 0.26);
 }
 
-/* ===== 全局背景：固定式极光网格 =====
-   三团径向渐变叠在窗口底色上，不随内容滚动，作为玻璃层的透底。 */
 :root[data-theme-style="magic"] body {
     background-image:
         radial-gradient(900px 620px at 10% -12%, rgba(139, 92, 246, 0.38), transparent 64%),
@@ -94,16 +82,13 @@
         radial-gradient(860px 660px at 76% 108%, rgba(236, 72, 153, 0.12), transparent 64%);
 }
 
-/* ===== 标题栏与侧边栏：玻璃材质 =====
-   现代布局下 .titlebar 只是右上角悬浮按钮的定位容器（透明、无边框，见 styles/mode.css），
-   因此材质只加在经典布局上。 */
 :root[data-theme-style="magic"]:not(.modern-layout) .titlebar {
     background-color: var(--bg-titlebar);
     backdrop-filter: var(--magic-glass-blur);
     border-bottom: 1px solid var(--border-light);
     position: relative;
 }
-/* 标题栏下沿的渐变发丝线 */
+
 :root[data-theme-style="magic"]:not(.modern-layout) .titlebar::after {
     content: '';
     position: absolute;
@@ -128,7 +113,6 @@
     border-right: 1px solid var(--border-light);
 }
 
-/* ===== 品牌名：渐变文字 ===== */
 :root[data-theme-style="magic"] .titlebar-brand,
 :root[data-theme-style="magic"] .sidebar-brand {
     background-image: var(--magic-gradient);
@@ -139,7 +123,7 @@
     font-weight: 700;
     letter-spacing: 0.6px;
 }
-/* 渐变文字下背景色不可见，悬停改用光晕反馈 */
+
 :root[data-theme-style="magic"] .titlebar-brand:hover {
     background-color: transparent;
     -webkit-text-fill-color: transparent;
@@ -150,7 +134,6 @@
     filter: drop-shadow(0 0 16px rgba(139, 92, 246, 0.75));
 }
 
-/* ===== 侧边栏导航：胶囊 + 选中态渐变填充 ===== */
 :root[data-theme-style="magic"] .nav-item {
     border-radius: var(--radius-pill);
     padding: 7px 12px;
@@ -179,7 +162,6 @@
     font-weight: 600;
 }
 
-/* 新建按钮：渐变实心 + 光晕 */
 :root[data-theme-style="magic"] .btn-sidebar-new {
     background-image: var(--magic-gradient);
     background-color: transparent;
@@ -190,13 +172,12 @@
     box-shadow: var(--magic-glow-md);
     filter: brightness(1.08);
 }
-/* 现代布局把这两枚收成 28px 方块，模式表里的选择器更具体，需在同一层补回胶囊轮廓 */
+
 :root[data-theme-style="magic"] .sidebar-action-wrap .btn-sidebar-new,
 :root[data-theme-style="magic"] .sidebar-action-wrap .btn-sidebar-new-extra {
     border-radius: var(--radius-pill);
 }
 
-/* 标签胶囊与标签页 */
 :root[data-theme-style="magic"] .tag-pill {
     border-radius: var(--radius-pill);
     border-color: var(--border-color);
@@ -226,7 +207,6 @@
     box-shadow: var(--magic-glow-lg);
 }
 
-/* ===== 笔记列表 ===== */
 :root[data-theme-style="magic"] .search-box {
     border-radius: var(--radius-pill);
     background-color: rgba(255, 255, 255, 0.05);
@@ -262,8 +242,6 @@
     box-shadow: var(--magic-glow-sm);
 }
 
-/* ===== 工作区与编辑器 ===== */
-/* 工作区透出全局极光底：不透明底色会把 body 那层渐变完全盖住 */
 :root[data-theme-style="magic"] .workspace {
     background-color: rgba(13, 16, 38, 0.72);
 }
@@ -306,7 +284,6 @@
     border-color: var(--border-color);
 }
 
-/* 空状态：整块工作区铺一层淡极光，图标走渐变描线 */
 :root[data-theme-style="magic"] .empty-placeholder {
     background-image: var(--magic-gradient-soft), radial-gradient(560px 380px at 50% 42%, rgba(139, 92, 246, 0.22), transparent 70%);
     color: var(--text-secondary);
@@ -321,7 +298,6 @@
     filter: drop-shadow(0 6px 20px rgba(139, 92, 246, 0.45));
 }
 
-/* ===== 设置页 ===== */
 :root[data-theme-style="magic"] .settings-nav-item {
     border-radius: var(--radius-pill);
 }
@@ -361,7 +337,6 @@
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 28px rgba(124, 58, 237, 0.1);
 }
 
-/* 主按钮：渐变实心 */
 :root[data-theme-style="magic"] .settings-btn.primary {
     background-image: var(--magic-gradient);
     background-color: transparent;
@@ -376,7 +351,6 @@
     border-radius: var(--radius-pill);
 }
 
-/* 开关与圆角滑块：渐变轨道 */
 :root[data-theme-style="magic"] .slider {
     border-radius: var(--radius-pill);
 }
@@ -390,7 +364,6 @@
     border-radius: var(--radius-pill);
 }
 
-/* 输入类控件：聚焦时给一圈光晕 */
 :root[data-theme-style="magic"] .settings-select,
 :root[data-theme-style="magic"] .accent-hex-input,
 :root[data-theme-style="magic"] .select-folder,
@@ -414,12 +387,10 @@
     box-shadow: 0 0 0 4px var(--accent-bg);
 }
 
-/* 「跟随主题」色块：用本风格的明暗两套强调色表示未自定义 */
 :root[data-theme-style="magic"] .accent-swatch-default {
     background-image: linear-gradient(135deg, #7c3aed 0 50%, #8b5cf6 50% 100%);
 }
 
-/* ===== 浮层：右键菜单、下拉菜单、Toast 与 AI 面板共用同一套玻璃材质 ===== */
 :root[data-theme-style="magic"] .context-menu,
 :root[data-theme-style="magic"] .dropdown-menu,
 :root[data-theme-style="magic"] .toast-item,
@@ -436,7 +407,6 @@
     border-radius: var(--radius-pill);
 }
 
-/* ===== 图标按钮与窗口按钮 ===== */
 :root[data-theme-style="magic"] .btn-action-icon {
     border-radius: var(--radius-pill);
     background-color: rgba(255, 255, 255, 0.05);
@@ -451,7 +421,6 @@
     box-shadow: var(--magic-glow-sm);
 }
 
-/* ===== Markdown 正文：标题渐变、引用块描边 ===== */
 :root[data-theme-style="magic"] .markdown-body h1,
 :root[data-theme-style="magic"] .markdown-body h2 {
     border-bottom: none;
@@ -472,7 +441,6 @@
     box-shadow: var(--magic-glow-sm);
 }
 
-/* ===== 滚动条：渐变滑块 ===== */
 :root[data-theme-style="magic"] ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -485,7 +453,6 @@
     background-color: rgba(139, 92, 246, 0.7);
 }
 
-/* ===== 动效偏好：系统开启「减少动态效果」时收起位移与光晕过渡 ===== */
 @media (prefers-reduced-motion: reduce) {
     :root[data-theme-style="magic"] .note-card,
     :root[data-theme-style="magic"] .nav-item,

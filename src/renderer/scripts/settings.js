@@ -25,7 +25,13 @@ function switchSettingsCategory(id) {
         panel.classList.toggle('hidden', panel.dataset.settingsPanel !== category.id);
     });
 
-const headerText = document.getElementById('settings-header-text');
+    const headerToggle = document.getElementById('settings-ai-toggle');
+    if (headerToggle) headerToggle.classList.toggle('visible', category.id === 'ai');
+
+    const aiSwitchSection = document.querySelector('[data-settings-panel="ai"] .settings-section:first-child');
+    if (aiSwitchSection) aiSwitchSection.classList.toggle('hidden', category.id === 'ai');
+
+    const headerText = document.getElementById('settings-header-text');
     if (headerText) headerText.textContent = category.label;
     const headerDesc = document.getElementById('settings-header-desc');
     if (headerDesc) headerDesc.textContent = category.desc;

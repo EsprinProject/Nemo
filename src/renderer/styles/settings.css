@@ -71,6 +71,14 @@
     align-items: center;
     gap: 8px;
 }
+.settings-ai-toggle {
+    margin-left: auto;
+    margin-top: 20px;
+    display: none !important;
+}
+.settings-ai-toggle.visible {
+    display: inline-block !important;
+}
 .settings-desc {
     font-size: 13px;
     color: var(--text-secondary);
@@ -739,10 +747,15 @@ input:checked + .slider:before {
 
 @container settings-content (min-width: 1000px) {
     .settings-panel {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 24px 32px;
-        align-items: start;
+        display: block;
+        columns: 2;
+        column-gap: 32px;
+    }
+
+    .settings-section {
+        break-inside: avoid;
+        margin-bottom: 24px;
+        width: 100%;
     }
 
     .settings-slider {

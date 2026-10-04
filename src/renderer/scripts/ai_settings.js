@@ -178,14 +178,16 @@ function applyAiEnabledState() {
     const entryBtn = document.getElementById('btn-ai-assistant');
     if (entryBtn) entryBtn.classList.toggle('hidden', !enabled);
 
-document.querySelectorAll('#settings-view .ai-config-section').forEach((section) => {
+    document.querySelectorAll('#settings-view .ai-config-section').forEach((section) => {
         section.classList.toggle('hidden', !enabled);
     });
     const disabledHint = document.getElementById('ai-disabled-hint');
     if (disabledHint) disabledHint.classList.toggle('hidden', enabled);
 
-    if (!enabled) {
+    const headerCheckbox = document.getElementById('setting-ai-enabled-header');
+    if (headerCheckbox) headerCheckbox.checked = enabled;
 
+    if (!enabled) {
         if (State.aiStreaming) stopAiGeneration();
         if (State.aiPanelOpen) setAiPanelOpen(false);
     }
@@ -353,7 +355,10 @@ const keyInput = document.getElementById('setting-ai-apikey');
 const enabledToggle = document.getElementById('setting-ai-enabled');
     if (enabledToggle) enabledToggle.onchange = (event) => toggleAiEnabled(event.target.checked);
 
-document.querySelectorAll('#settings-view .ai-quick-chip').forEach((chip) => {
+    const headerToggle = document.getElementById('setting-ai-enabled-header');
+    if (headerToggle) headerToggle.onchange = (event) => toggleAiEnabled(event.target.checked);
+
+    document.querySelectorAll('#settings-view .ai-quick-chip').forEach((chip) => {
         chip.onclick = () => applyAiBaseUrlPreset(chip.dataset.url || '');
     });
 

@@ -11,6 +11,7 @@ const STICKY_HTML = path.join(__dirname, '..', 'renderer', 'sticky.html');
 const STATE_FILE_NAME = 'stickies.json';
 
 const ITEM_ID_ARG = '--esprin-nemo-sticky-id=';
+const DATA_DIR_ARG = '--esprin-nemo-data-dir=';
 
 const DEFAULT_WIDTH = 320;
 const DEFAULT_HEIGHT = 300;
@@ -374,7 +375,7 @@ function createWindowForItem(item) {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      additionalArguments: [...appearance.args, `${ITEM_ID_ARG}${item.id}`]
+      additionalArguments: [...appearance.args, `${ITEM_ID_ARG}${item.id}`, `${DATA_DIR_ARG}${resolveDataDir()}`]
     }
   });
 

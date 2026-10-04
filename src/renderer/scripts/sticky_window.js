@@ -1,9 +1,15 @@
 const { ipcRenderer } = require('electron');
+const path = require('path');
 
 const ID_ARG_PREFIX = '--esprin-nemo-sticky-id=';
+const DATA_DIR_PREFIX = '--esprin-nemo-data-dir=';
 const STICKY_ID = (() => {
     const matched = (process.argv || []).find((item) => typeof item === 'string' && item.startsWith(ID_ARG_PREFIX));
     return matched ? matched.slice(ID_ARG_PREFIX.length).trim() : '';
+})();
+const DATA_DIR = (() => {
+    const matched = (process.argv || []).find((item) => typeof item === 'string' && item.startsWith(DATA_DIR_PREFIX));
+    return matched ? matched.slice(DATA_DIR_PREFIX.length).trim() : '';
 })();
 
 const STICKY_COLORS = [
@@ -83,9 +89,34 @@ function hasChanges() {
     return titleEl.value !== savedTitle || contentEl.value !== savedContent || doneEl.checked !== savedDone;
 }
 
+function itemAssetsDir(itemId) {
+    const safeName = String(itemId || '').replace(/[\\/:*?"<>|]/g, '_');
+    return path.join(DATA_DIR, 'items', safeName);
+}
+
+function resolveStickyAssetPath(src) {
+    if (!src || src.startsWith('http://') || src.startsWith('https://') ||
+        src.startsWith('data:') || src.startsWith('file://')) {
+        return src;
+    }
+    if (!DATA_DIR || !sticky || !sticky.refId) return src;
+    const fullPath = path.join(itemAssetsDir(sticky.refId), src);
+    return 'file:///' + fullPath.replace(/\\/g, '/');
+}
+
 function renderPreview() {
     const text = contentEl.value;
     previewEl.innerHTML = text.trim() ? marked.parse(text) : '';
+
+    previewEl.querySelectorAll('img').forEach((img) => {
+        const src = img.getAttribute('src') || '';
+        if (src && src.includes('.')) {
+            const resolvedSrc = resolveStickyAssetPath(src);
+            if (resolvedSrc.startsWith('file://')) {
+                img.src = resolvedSrc;
+            }
+        }
+    });
 }
 
 function setEditButtonState(isEditing) {

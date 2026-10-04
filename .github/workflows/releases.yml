@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - package.json
-      - .github/workflows/releases.yml
   workflow_dispatch:
 
 permissions:

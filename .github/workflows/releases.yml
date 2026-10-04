@@ -1,6 +1,5 @@
 name: Release
 
-# 当 package.json 被推送到 main 分支时触发（版本号更新即代表有新版本需要发布）
 on:
   push:
     branches:
@@ -11,9 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  # 创建 Release / 推送 tag 需要写权限
   contents: write
-  # 清理 Actions 缓存需要 actions 权限
   actions: write
 
 jobs:
@@ -21,14 +18,12 @@ jobs:
     name: Build & Publish Release
     runs-on: windows-latest
     env:
-      # 无代码签名证书，跳过自动查找证书
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
         with:
-          # 需要完整的 tag 历史来判断该版本是否已经发布过
           fetch-depth: 0
 
       - name: 读取版本号并检查是否已发布
@@ -62,14 +57,37 @@ jobs:
         if: steps.check.outputs.published == 'false'
         run: bun run build
         env:
-          # electron-builder 检测到 CI 环境后会尝试连接 GitHub 处理草稿 Release，
-          # 缺少 token 时会直接报错中断打包，因此这里必须提供 GH_TOKEN。
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 列出构建产物
         if: steps.check.outputs.published == 'false'
         shell: bash
         run: ls -lh dist
+
+      - name: 提取 Git 提交记录并前置过滤
+        if: steps.check.outputs.published == 'false'
+        shell: bash
+        run: |
+          echo "[INFO] 查找上一个版本 Tag..."
+          LAST_TAG=$(git describe --tags --abbrev=0 "${{ github.sha }}^" 2>/dev/null || echo "")
+
+          if [ -n "$LAST_TAG" ]; then
+            echo "[INFO] 上一版本 Tag: $LAST_TAG，提取提交范围: $LAST_TAG..${{ github.sha }}"
+            git log "$LAST_TAG..${{ github.sha }}" --pretty=format:"* %s (%h)" --no-merges > RAW_COMMITS.txt
+          else
+            echo "[WARN] 未找到历史 Tag，提取最近 50 条提交..."
+            git log -n 50 --pretty=format:"* %s (%h)" --no-merges > RAW_COMMITS.txt
+          fi
+
+          # 从源头强力剔除所有工程、配置、版本升级、文件后缀类的噪音行
+          grep -viE "(\.yml|\.json|\.md|release|bump|workflow|actions|ci|build|chore\(|style\(|refactor\()" RAW_COMMITS.txt > FILTERED_COMMITS.txt || true
+
+          # 若全部被过滤完，回退使用原始提交，避免给 AI 传入空内容
+          if [ ! -s FILTERED_COMMITS.txt ]; then
+            cp RAW_COMMITS.txt FILTERED_COMMITS.txt
+          fi
+
+          echo "[INFO] 清洗后保留的有效功能提交数: $(wc -l < FILTERED_COMMITS.txt)"
 
       - name: 生成发行版说明
         if: steps.check.outputs.published == 'false'
@@ -78,24 +96,16 @@ jobs:
         env:
           AI_RELEASE: ${{ secrets.AI_Release }}
         run: |
-          echo "收集 git 提交历史..."
-          LAST_TAG=$(git describe --tags --abbrev=0 "${{ github.sha }}^" 2>/dev/null || echo "")
-          if [ -n "$LAST_TAG" ]; then
-            # 过滤 merge 提交与纯发版/版本号变更类提交
-            COMMITS=$(git log "$LAST_TAG..${{ github.sha }}" --pretty=format:"* %s (%h)" --no-merges | grep -viE "^\*\s*(bump|release|chore\(release\)|chore: release)" || echo "")
-          else
-            COMMITS=$(git log -n 15 --pretty=format:"* %s (%h)" --no-merges | grep -viE "^\*\s*(bump|release|chore\(release\)|chore: release)" || echo "")
-          fi
-
-          if [ -z "$COMMITS" ]; then
-            COMMITS="* 无新增功能提交（纯维护或版本号变更）"
-          fi
-
-          COMMITS="$COMMITS" node -e '
+          node -e '
             const fs = require("fs");
-            const commits = process.env.COMMITS || "";
+            const rawCommits = fs.readFileSync("FILTERED_COMMITS.txt", "utf8").trim();
 
-            // 解析机密配置
+            function fallback(reason) {
+              console.log("[WARN] 降级使用原始提交日志，原因:", reason);
+              fs.writeFileSync("GENERATED_RELEASE.md", "### 更新日志\n\n" + rawCommits, "utf8");
+              process.exit(0);
+            }
+
             function parseConfig(raw) {
               const config = {};
               if (!raw) return config;
@@ -116,24 +126,29 @@ jobs:
             const url = parsed.URL || "";
             const model = parsed.MODEL || "";
 
-            async function run() {
-              const fallbackContent = "常规维护与优化\n\n- 本次为内部工程维护，无可见的功能与界面变更";
+            if (!key || !url || !model) {
+              fallback("缺少 AI_RELEASE 配置");
+            }
 
-              if (!key || !url || !model) {
-                console.log("未提供完整的 AI_RELEASE 机密配置（需包含 URL, KEY, MODEL），使用默认说明。");
-                fs.writeFileSync("GENERATED_RELEASE.md", fallbackContent, "utf8");
-                return;
+            async function run() {
+              console.log("[INFO] 正在调用 AI 生成发行版说明...");
+              let promptTemplate = "";
+              try {
+                promptTemplate = fs.readFileSync(".github/workflows/releases_prompt.md", "utf8");
+              } catch (e) {
+                fallback("读取 releases_prompt.md 失败: " + e.message);
               }
 
-              console.log("正在调用 AI 生成发行版说明...");
-              const promptTemplate = fs.readFileSync(".github/workflows/releases_prompt.md", "utf8");
-              const prompt = promptTemplate.replace("{{commits}}", commits);
+              const prompt = promptTemplate.replace("{{commits}}", rawCommits);
+
+              let endpoint = url.replace(/\/+$/, "");
+              if (!endpoint.endsWith("/chat/completions")) {
+                endpoint += "/chat/completions";
+              }
 
               try {
-                let endpoint = url.replace(/\/+$/, "");
-                if (!endpoint.endsWith("/chat/completions")) {
-                  endpoint += "/chat/completions";
-                }
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000);
 
                 const res = await fetch(endpoint, {
                   method: "POST",
@@ -145,27 +160,37 @@ jobs:
                     model: model,
                     messages: [{ role: "user", content: prompt }],
                     temperature: 0.2
-                  })
+                  }),
+                  signal: controller.signal
                 });
+
+                clearTimeout(timeoutId);
+
+                if (!res.ok) {
+                  const errText = await res.text();
+                  fallback(`API 返回错误 ${res.status}: ${errText}`);
+                }
 
                 const data = await res.json();
                 let text = data.choices?.[0]?.message?.content || "";
                 text = text.trim();
+
                 if (text.startsWith("```markdown")) {
                   text = text.replace(/^```markdown\s*/, "").replace(/\s*```$/, "");
                 } else if (text.startsWith("```")) {
                   text = text.replace(/^```\s*/, "").replace(/\s*```$/, "");
                 }
 
-                if (text) {
+                if (text.length > 5) {
+                  console.log("[INFO] 发行版说明生成完毕。");
                   fs.writeFileSync("GENERATED_RELEASE.md", text, "utf8");
                   return;
+                } else {
+                  fallback("AI 返回内容过短");
                 }
               } catch (err) {
-                console.error("AI 生成失败:", err);
+                fallback("请求异常: " + err.message);
               }
-
-              fs.writeFileSync("GENERATED_RELEASE.md", fallbackContent, "utf8");
             }
 
             run();
@@ -182,18 +207,16 @@ jobs:
           body_path: ${{ steps.release_notes.outputs.path }}
           draft: false
           prerelease: false
-          # 发布 electron-builder 打出的两个 exe：Setup 与 Portable
           files: |
             dist/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 清理 Actions 缓存
-        # 无论构建/发布成功与否都执行，避免缓存不断累积占满仓库配额
         if: ${{ !cancelled() && steps.check.outputs.published == 'false' }}
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "清理 $GITHUB_REPOSITORY 的 Actions 缓存..."
-          gh cache delete --all --repo "$GITHUB_REPOSITORY" || echo "没有可清理的缓存。"
+          echo "[INFO] 清理 Actions 缓存..."
+          gh cache delete --all --repo "$GITHUB_REPOSITORY" || echo "[INFO] 没有可清理的缓存。"

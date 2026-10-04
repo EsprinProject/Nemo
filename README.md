@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/EsprinProject/Logos/main/Main.new.svg" width="88" height="88" alt="Esprin Nemo">
+<img src="https://raw.githubusercontent.com/EsprinProject/Logos/main/main.svg" width="88" height="88" alt="Esprin Nemo">
 
 # Esprin Nemo
 
